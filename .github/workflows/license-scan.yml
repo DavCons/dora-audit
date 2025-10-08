@@ -1,0 +1,32 @@
+name: OSS License Scan
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Licensee (repo files)
+        uses: pilosus/action-licensee@v1
+        with:
+          output: summary
+      - name: Python deps licenses (app)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt
+          pip install pip-licenses
+      - name: Generate licenses report
+        run: |
+          pip-licenses --format=json --with-authors --with-urls --with-license-file > python-licenses.json
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-reports
+          path: python-licenses.json

@@ -1,0 +1,1 @@
+{ "name": "dora-audit-e2e-app", "private": true, "devDependencies": { "@playwright/test": "^1.46.0" }, "scripts": { "test": "playwright test" } }

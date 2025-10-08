@@ -1,0 +1,23 @@
+name: E2E (site)
+on:
+  push:
+    branches: [ main ]
+  pull_request: {}
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python -m http.server 8000 --directory site & echo $! > server.pid
+          sleep 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - working-directory: tests_e2e
+        run: |
+          npm ci || npm install
+          npx playwright install --with-deps
+          npm test
+      - if: always()
+        run: kill $(cat server.pid) || true

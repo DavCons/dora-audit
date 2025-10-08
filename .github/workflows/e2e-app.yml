@@ -1,0 +1,37 @@
+name: E2E (app)
+on:
+  push:
+    branches: [ main ]
+  pull_request: {}
+jobs:
+  e2e-app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install app deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt
+      - name: Start Streamlit app
+        env:
+          STREAMLIT_BROWSER_GATHER_USAGE_STATS: 'false'
+        run: |
+          python -m streamlit run app/app.py --server.headless true --server.port 8501 --server.address 0.0.0.0 &
+          echo $! > app.pid
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8501/ > /dev/null; then echo OK; break; fi
+            sleep 2
+          done
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - working-directory: tests_e2e_app
+        run: |
+          npm ci || npm install
+          npx playwright install --with-deps
+          npm test
+      - if: always()
+        run: kill $(cat app.pid) || true

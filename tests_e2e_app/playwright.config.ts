@@ -1,0 +1,1 @@
+import { defineConfig } from '@playwright/test'; export default defineConfig({ timeout: 45000, retries: 1, use: { baseURL: process.env.APP_BASE_URL || 'http://localhost:8501', headless: true }, reporter: [['list']] });
