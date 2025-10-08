@@ -11,7 +11,7 @@ jobs:
       - run: |
           python -m http.server 8000 --directory site & echo $! > server.pid
           sleep 1
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
       - working-directory: tests_e2e
