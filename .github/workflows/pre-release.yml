@@ -9,7 +9,7 @@ jobs:
   prerelease:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Pack site
         run: zip -r site_bundle.zip site
       - name: Create GitHub pre-release
