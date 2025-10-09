@@ -1,31 +1,74 @@
-name: Build & Push Docker image (app) to GHCR
+name: Build & Push Docker images to GHCR
+
 on:
   push:
     branches: [ main ]
   workflow_dispatch: {}
+
 permissions:
   contents: read
   packages: write
+
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}-app
+  REPO: ${{ github.repository }}  # owner/repo (use lowercase in tags below)
+
 jobs:
-  build-and-push-image:
+  app:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
+
+      - name: Docker metadata (app)
+        id: meta-app
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-      - uses: docker/build-push-action@v6
+          images: ghcr.io/${{ env.REPO }}-app
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build & push (app)
+        uses: docker/build-push-action@v6
         with:
           context: ./app
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-app.outputs.tags }}
+          labels: ${{ steps.meta-app.outputs.labels }}
+
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata (site)
+        id: meta-site
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.REPO }}-site
+          tags: |
+            type=raw,value=latest
+            type=sha
+
+      - name: Build & push (site)
+        uses: docker/build-push-action@v6
+        with:
+          context: ./site
+          push: true
+          tags: ${{ steps.meta-site.outputs.tags }}
+          labels: ${{ steps.meta-site.outputs.labels }}
+
