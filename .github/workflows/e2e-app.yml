@@ -25,7 +25,7 @@ jobs:
             if curl -fsS http://localhost:8501/ > /dev/null; then echo OK; break; fi
             sleep 2
           done
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
       - working-directory: tests_e2e_app
