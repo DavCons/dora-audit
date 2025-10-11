@@ -1,9 +1,14 @@
-version: '3.9'
 services:
   streamlit-app:
     build: ./app
-    env_file: ./app/.env
-    ports: ['8501:8501']
+    environment:
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - APP_BASE_URL=${APP_BASE_URL}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - WEBHOOK_TOKEN=${WEBHOOK_TOKEN}
+    ports: ["8501:8501"]
+    restart: unless-stopped
   site:
     build: ./site
     ports: ['8080:80']

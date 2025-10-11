@@ -71,7 +71,4 @@ jobs:
           push: true
           tags: ${{ steps.meta-site.outputs.tags }}
           labels: ${{ steps.meta-site.outputs.labels }}
-<<<<<<< HEAD
 
-=======
->>>>>>> 0b9538c793a04c4c14a6b26e26f799fc105b646c

@@ -1,16 +1,49 @@
-<!doctype html><meta charset="utf-8"><title>DORA Audit</title>
-<body style="margin:0;background:#0b0f14;color:#e6edf3;font-family:system-ui">
-<header style="padding:16px;border-bottom:1px solid #1f2733;background:#0b0f14cc;position:sticky;top:0">
-  <b>DORA Audit</b> • <a href="./index_pl.html" style="color:#7c5cff">PL</a>
-</header>
-<main style="max-width:980px;margin:0 auto;padding:24px">
-  <h1>DORA audit in <u>minutes</u> — self‑assessment + report</h1>
-  <p>XLSX import (with <b>Hints</b>), section scores and gap register, HTML export.</p>
-  <h2>Features</h2>
-  <ul><li>Columns: section, requirement_ref, question_id, question_text, answer, weight, hint/Podpowiedź</li>
-  <li>Green/amber/red thresholds</li><li>HTML report (easy PDF)</li></ul>
-  <h2>FAQ</h2>
-  <details><summary>Bring my own questions?</summary>Yes, keep the columns.</details>
-  <details><summary>Hints in the report?</summary>Yes, for gaps.</details>
-</main>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DORA Audit — Landing</title>
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin:0; }
+    header { padding: 40px 24px; background: #111; color: #fff; }
+    .container { max-width: 980px; margin: 0 auto; padding: 24px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { border: 1px solid #eaeaea; border-radius: 14px; padding: 20px; }
+    a { color: #6B46C1; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>DORA Audit</h1>
+      <p>Fill out the assessment → download a DORA compliance report (HTML/PDF) with remediation plan.</p>
+      <p><a href="./DORA_Checkout_and_FAQ.html">Go to checkout</a></p>
+    </div>
+  </header>
+  <div class="container">
+    <div class="grid">
+      <div class="card">
+        <h3>Why us?</h3>
+        <ul>
+          <li>Fast start — prebuilt questionnaire</li>
+          <li>Reports with gaps & priorities</li>
+          <li>CSV/XLSX/PDF export</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>How it works</h3>
+        <ol>
+          <li>Purchase access (Stripe Checkout)</li>
+          <li>Log into the app</li>
+          <li>Fill the assessment & download the report</li>
+        </ol>
+      </div>
+    </div>
+    <p style="margin-top:24px;">
+      <a href="./privacy.html">Privacy Policy</a> · <a href="./terms.html">Terms</a> · <a href="./index_pl.html">Polski</a>
+    </p>
+  </div>
 </body>
+</html>

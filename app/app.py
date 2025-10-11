@@ -3,7 +3,164 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
+# --- Supabase persistence helpers ---
+from datetime import datetime
+def _safe_get_user_identity(client):
+    try:
+        user = client.auth.get_user().user
+        if user and user.email:
+            return {"id": user.id, "email": user.email}
+    except Exception:
+        pass
+    try:
+        ses = st.session_state.get("supabase_session")
+        if ses and "user" in ses and ses["user"].get("email"):
+            return {"id": ses["user"]["id"], "email": ses["user"]["email"]}
+    except Exception:
+        pass
+    return {"id": None, "email": None}
+
+def save_assessment(client, answers, scores, meta=None):
+
+
+    # --- Data validation & reporting helpers ---
+    import io
+    import pandas as pd
+
+    REQUIRED_COLUMNS = ["section","requirement_ref","question_id","question_text","hint","weight","answer"]
+
+    def validate_questions_df(df: pd.DataFrame):
+        """Ensure the uploaded XLSX has all required columns with sane types."""
+        missing = [c for c in REQUIRED_COLUMNS if c not in df.columns]
+        if missing:
+            st.error(f"Brak kolumn w pliku XLSX: {', '.join(missing)}. Upewnij się, że plik zawiera kolumny: {', '.join(REQUIRED_COLUMNS)}")
+            st.stop()
+        # normalize types
+        df["section"] = df["section"].astype(str)
+        df["question_id"] = df["question_id"].astype(str)
+        if "weight" in df.columns:
+            df["weight"] = pd.to_numeric(df["weight"], errors="coerce").fillna(1.0)
+
+    def build_gap_register(df: pd.DataFrame):
+        """Return only gaps (No/Partial) as a DataFrame."""
+        if "answer" not in df.columns:
+            return pd.DataFrame()
+        mask = df["answer"].isin(["No","Partial"])
+        cols = [c for c in ["section","requirement_ref","question_id","question_text","answer","hint","weight"] if c in df.columns]
+        gaps = df.loc[mask, cols].copy()
+        gaps = gaps.rename(columns={
+            "requirement_ref":"requirement",
+            "question_text":"question"
+        })
+        return gaps
+
+    def download_gap_register_buttons(gaps_df: pd.DataFrame):
+        """Render download buttons for gaps as CSV/XLSX; no-op if empty."""
+        if gaps_df.empty:
+            st.info("Brak luk do wyeksportowania (wszystko na zielono).")
+            return
+        # CSV
+        csv_bytes = gaps_df.to_csv(index=False).encode("utf-8")
+        st.download_button("Pobierz rejestr luk (CSV)", data=csv_bytes, file_name="gap_register.csv", mime="text/csv")
+
+    # --- PDF export ---
+    with st.expander("Eksport do PDF", expanded=False):
+        if st.button("Wygeneruj PDF z raportu"):
+            try:
+                pdf_bytes = html_to_pdf_bytes(report_html if 'report_html' in locals() else rendered_html)
+                st.download_button("Pobierz raport (PDF)", data=pdf_bytes, file_name="dora_report.pdf", mime="application/pdf")
+                st.success("PDF gotowy do pobrania.")
+            except ImportError:
+                st.info("Aby eksportować do PDF, zainstaluj pakiet **weasyprint** oraz wymagane biblioteki systemowe. Alternatywnie pobierz HTML i użyj „Drukuj → Zapisz jako PDF”.")
+            except Exception as e:
+                st.error(f"Nie udało się wygenerować PDF: {e}")
+
+
+    # XLSX
+    xls_buf = io.BytesIO()
+    with pd.ExcelWriter(xls_buf, engine="xlsxwriter") as writer:
+        gaps_df.to_excel(writer, index=False, sheet_name="Gaps")
+    st.download_button("Pobierz rejestr luk (XLSX)", data=xls_buf.getvalue(), file_name="gap_register.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+def list_assessments_ui(client):
+    """Show previous assessments for the current user in an expander."""
+    try:
+        user = client.auth.get_user().user
+        email = user.email if user else None
+    except Exception:
+        email = None
+    st.subheader("Historia zapisanych ocen")
+    if not client or not email:
+        st.info("Zaloguj się, aby zobaczyć historię zapisów.")
+        return
+    try:
+        res = client.table("assessments").select("*").eq("email", email).order("created_at", desc=True).limit(50).execute()
+        rows = res.data if hasattr(res, "data") else (res.get("data") if isinstance(res, dict) else [])
+    except Exception as e:
+        st.error(f"Nie udało się pobrać historii: {e}")
+        return
+    if not rows:
+        st.write("Brak zapisanych ocen.")
+        return
+    # Render compact table
+    import pandas as pd
+    df_hist = pd.DataFrame(rows)
+    # Keep common columns
+    keep_cols = [c for c in ["created_at","classification","scores","email","id"] if c in df_hist.columns]
+    st.dataframe(df_hist[keep_cols] if keep_cols else df_hist, use_container_width=True)
+    # Optional: raw JSON download
+    st.download_button("Pobierz historię (JSON)", data=df_hist.to_json(orient="records", force_ascii=False).encode("utf-8"), file_name="assessments_history.json", mime="application/json")
+
+
+
+    """
+    Insert a row into the 'assessments' table.
+    Expected columns in 'assessments':
+      - email (text)
+      - user_id (uuid) nullable
+      - created_at (timestamp) default now() on server is OK but we also send it
+      - answers (jsonb)
+      - scores (jsonb)
+      - meta (jsonb) optional
+    """
+    ident = _safe_get_user_identity(client)
+    payload = {
+        "email": ident.get("email"),
+        "user_id": ident.get("id"),
+        "created_at": datetime.utcnow().isoformat(),
+        "answers": answers,
+        "scores": scores,
+        "meta": meta or {},
+    }
+    try:
+        res = client.table("assessments").insert(payload).execute()
+        return True, res
+    except Exception as e:
+        return False, str(e)
+
+
+def answers_payload_update_hook(qid, question_text, value, section=None, ref=None):
+    try:
+        ap = st.session_state.get("answers_payload", {})
+        ap[str(qid) if qid is not None else question_text[:64]] = {
+            "answer": value,
+            "question": question_text,
+            "section": section,
+            "ref": ref,
+        }
+        st.session_state["answers_payload"] = ap
+    except Exception:
+        pass
+
+
+
+
 st.set_page_config(page_title="DORA Compliance - MVP", layout="wide")
+
+
+if "answers_payload" not in st.session_state:
+    st.session_state["answers_payload"] = {}
+
 st.title("DORA Audit — MVP")
 
 import os
@@ -120,6 +277,7 @@ with st.sidebar:
 
 def load_questions(xlsx) -> pd.DataFrame:
     df = pd.read_excel(xlsx, engine="openpyxl")
+    validate_questions_df(df)
     df = df.rename(columns={"Podpowiedź":"hint","Hint":"hint"})
     for c in ["section","requirement_ref","question_id","question_text"]:
         if c not in df.columns: df[c] = ""
@@ -148,6 +306,27 @@ def compute_scores(df: pd.DataFrame, green_thr=80, amber_thr=60):
     return overall,badge,section_scores,gaps_df
 
 def render_report(df: pd.DataFrame, green_thr:int, amber_thr:int) -> str:
+
+
+    # --- Optional PDF export (WeasyPrint) ---
+    def html_to_pdf_bytes(html: str) -> bytes:
+        """
+        Try to render HTML to PDF using WeasyPrint. If unavailable, raise ImportError.
+        """
+        try:
+            from weasyprint import HTML, CSS
+        except Exception as e:
+            raise ImportError("WeasyPrint is not installed or missing system deps") from e
+        css = CSS(string="""
+            @page { size: A4; margin: 16mm; }
+            h1, h2, h3 { page-break-after: avoid; }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #ddd; padding: 6px; }
+        """)
+        pdf = HTML(string=html).write_pdf(stylesheets=[css])
+        return pdf
+
+
     overall,badge,sections,gaps = compute_scores(df, green_thr, amber_thr)
     rows = "".join([f"<tr><td>{s}</td><td>{v}%</td></tr>" for s,v in sections.items()])
     gaps_rows = "".join([
@@ -188,11 +367,152 @@ with tab1:
         try: idx = order.index(r.get("answer","N.A."))
         except ValueError: idx = order.index("N.A.")
         ans = st.radio("Odpowiedź:", order, index=idx, key=f"ans_{i}", horizontal=True)
-        df.at[i,"answer"]=ans
-        st.divider()
+    answers_payload_update_hook(qid if 'qid' in locals() else (row.question_id if 'row' in locals() and hasattr(row,'question_id') else None), (question_text if 'question_text' in locals() else (row.question_text if 'row' in locals() and hasattr(row,'question_text') else '')), ans, section=(section if 'section' in locals() else (row.section if 'row' in locals() and hasattr(row,'section') else None)), ref=(requirement_ref if 'requirement_ref' in locals() else (row.requirement_ref if 'row' in locals() and hasattr(row,'requirement_ref') else None)))
+    df.at[i,"answer"]=ans
+    st.divider()
     st.session_state["df"]=df
 
 with tab2:
     html = render_report(st.session_state.get("df", pd.DataFrame()), green_thr, amber_thr)
     st.download_button("Pobierz raport (HTML)", data=html.encode("utf-8"), file_name="dora_report.html", mime="text/html")
+
+
+# --- Save results to Supabase ---
+try:
+    sb_client = supa()
+except Exception:
+    sb_client = None
+if sb_client:
+    st.divider()
+    st.subheader("Zapis wyników")
+label_name = st.text_input("Nazwa/etykieta tej oceny (opcjonalnie)", value="")
+if st.button("Zapisz wynik w Supabase", type="primary"):
+    try:
+        answers_payload = st.session_state.get("answers_payload") or {}
+    except Exception:
+        answers_payload = {}
+    try:
+        scores_payload = {
+            "overall": float(total_score) if 'total_score' in locals() else None,
+            "by_section": section_scores if 'section_scores' in locals() else {},
+            "thresholds": {
+                "green": green_threshold if 'green_threshold' in locals() else None,
+                "amber": amber_threshold if 'amber_threshold' in locals() else None,
+            },
+            "classification": overall_label if 'overall_label' in locals() else None,
+        }
+    except Exception:
+        scores_payload = {}
+    meta_payload = {"app_version": "fixed-2025-10-11"}
+if label_name:
+    meta_payload["label"] = label_name
+if 'overall_label' in locals():
+    meta_payload["classification"] = overall_label
+    ok, res = save_assessment(sb_client, answers_payload, scores_payload, meta=meta_payload)
+    if ok:
+        st.success("Zapisano wynik w tabeli 'assessments'.")
+    else:
+        st.error(f"Nie udało się zapisać: {res}")
+else:
+    st.info("Brak klienta Supabase – uzupełnij SUPABASE_URL i SUPABASE_ANON_KEY.")
     st.components.v1.html(html, height=460, scrolling=True)
+
+st.divider()
+with st.expander("Historia zapisów (Supabase)", expanded=False):
+    try:
+        sb = supa()
+    except Exception:
+        sb = None
+    if not sb:
+        st.info("Brak klienta Supabase.")
+    else:
+        # Fetch
+        email = None
+        try:
+            u = sb.auth.get_user().user
+            email = u.email if u else None
+        except Exception:
+            pass
+        if not email:
+            st.info("Zaloguj się, aby zobaczyć historię.")
+        else:
+            try:
+                res = sb.table("assessments").select("*").eq("email", email).order("created_at", desc=True).limit(200).execute()
+                rows = res.data if hasattr(res, "data") else (res.get("data") if isinstance(res, dict) else [])
+            except Exception as e:
+                st.error(f"Nie udało się pobrać historii: {e}")
+                rows = []
+            import pandas as pd
+            dfh = pd.DataFrame(rows) if rows else pd.DataFrame()
+            # Filters
+            c1, c2, c3 = st.columns([1,1,1])
+            with c1:
+                start = st.date_input("Od daty", value=None)
+            with c2:
+                end = st.date_input("Do daty", value=None)
+            with c3:
+                classes = ["(wszystkie)"]
+                if not dfh.empty:
+                    if "classification" in dfh.columns:
+                        classes += sorted([x for x in dfh["classification"].dropna().unique().tolist() if isinstance(x, str)])
+                    else:
+                        classes += ["green","amber","red"]
+                cls = st.selectbox("Klasyfikacja", classes, index=0)
+
+            view = dfh.copy()
+            if not view.empty and "created_at" in view.columns:
+                view["created_at"] = pd.to_datetime(view["created_at"], errors="coerce")
+            if start:
+                view = view[view["created_at"] >= pd.to_datetime(start)]
+            if end:
+                view = view[view["created_at"] < (pd.to_datetime(end) + pd.Timedelta(days=1))]
+            if cls and cls != "(wszystkie)":
+                if "classification" in view.columns:
+                    view = view[view["classification"] == cls]
+                else:
+                    def _class_from_scores(s):
+                        try:
+                            return (s or {}).get("classification")
+                        except Exception:
+                            return None
+                    if "scores" in view.columns:
+                        view["_cls"] = view["scores"].apply(_class_from_scores)
+                        view = view[view["_cls"] == cls]
+
+            keep = [c for c in ["created_at","classification","email","id","scores"] if c in view.columns]
+            st.dataframe(view[keep] if keep else view, use_container_width=True, height=320)
+
+            # Preview
+            st.write("**Podgląd wybranej oceny**")
+            ids = view["id"].astype(str).tolist() if "id" in view.columns else []
+            chosen = st.selectbox("Wybierz zapis ID", ["(brak)"] + ids, index=0)
+            if chosen != "(brak)":
+                try:
+                    row = view[view["id"].astype(str)==chosen].iloc[0].to_dict()
+                    st.caption(f"Utworzono: {row.get('created_at')}  |  E-mail: {row.get('email')}  |  Klasyfikacja: {row.get('classification')}")
+                    st.subheader("Scores")
+                    st.json(row.get("scores"))
+                    answers = row.get("answers") or {}
+                    if isinstance(answers, dict):
+                        import pandas as pd
+                        adf = pd.DataFrame([
+                            {
+                                "section": v.get("section"),
+                                "requirement": v.get("ref"),
+                                "question_id": k,
+                                "question": v.get("question"),
+                                "answer": v.get("answer")
+                            } for k, v in answers.items()
+                        ])
+                        if not adf.empty:
+                            gaps = adf[adf["answer"].isin(["No","Partial"])]
+                            st.subheader("Luki w tym zapisie")
+                            if gaps.empty:
+                                st.write("Brak luk.")
+                            else:
+                                st.dataframe(gaps, use_container_width=True)
+                                import io
+                                csvb = gaps.to_csv(index=False).encode("utf-8")
+                                st.download_button("Pobierz luki (CSV) dla tego zapisu", data=csvb, file_name=f"gaps_{chosen}.csv", mime="text/csv")
+                except Exception as e:
+                    st.error(f"Nie udało się zbudować podglądu: {e}")

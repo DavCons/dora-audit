@@ -1,16 +1,49 @@
-<!doctype html><meta charset="utf-8"><title>DORA Audit</title>
-<body style="margin:0;background:#0b0f14;color:#e6edf3;font-family:system-ui">
-<header style="padding:16px;border-bottom:1px solid #1f2733;background:#0b0f14cc;position:sticky;top:0">
-  <b>DORA Audit</b> • <a href="./index_en.html" style="color:#7c5cff">EN</a>
-</header>
-<main style="max-width:980px;margin:0 auto;padding:24px">
-  <h1>Audyt DORA w <u>minuty</u> — samoocena + raport</h1>
-  <p>Import XLSX (z <b>Podpowiedziami</b>), wyniki sekcji i rejestr luk, eksport HTML.</p>
-  <h2>Funkcje</h2>
-  <ul><li>Kolumny: section, requirement_ref, question_id, question_text, answer, weight, hint/Podpowiedź</li>
-  <li>Progi green/amber/red</li><li>Raport HTML (łatwo do PDF)</li></ul>
-  <h2>FAQ</h2>
-  <details><summary>Własna lista pytań?</summary>Tak, zachowaj kolumny.</details>
-  <details><summary>Podpowiedzi w raporcie?</summary>Tak, przy lukach.</details>
-</main>
+
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DORA Audit — Strona Główna</title>
+  <style>
+    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; margin:0; }
+    header { padding: 40px 24px; background: #111; color: #fff; }
+    .container { max-width: 980px; margin: 0 auto; padding: 24px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .card { border: 1px solid #eaeaea; border-radius: 14px; padding: 20px; }
+    a { color: #6B46C1; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>DORA Audit</h1>
+      <p>Wypełnij ankietę → pobierz raport zgodności DORA (HTML/PDF) z planem działań.</p>
+      <p><a href="./DORA_Checkout_and_FAQ.html">Przejdź do zakupu</a></p>
+    </div>
+  </header>
+  <div class="container">
+    <div class="grid">
+      <div class="card">
+        <h3>Dlaczego my?</h3>
+        <ul>
+          <li>Szybki start — gotowa ankieta</li>
+          <li>Raporty z lukami i priorytetami</li>
+          <li>Eksport CSV/XLSX/PDF</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Jak zacząć</h3>
+        <ol>
+          <li>Kup dostęp (Stripe Checkout)</li>
+          <li>Zaloguj się w aplikacji</li>
+          <li>Wypełnij ankietę i pobierz raport</li>
+        </ol>
+      </div>
+    </div>
+    <p style="margin-top:24px;">
+      <a href="./privacy.html">Polityka Prywatności</a> · <a href="./terms.html">Regulamin</a> · <a href="./index_en.html">English</a>
+    </p>
+  </div>
 </body>
+</html>

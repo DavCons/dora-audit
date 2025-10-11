@@ -1,0 +1,11 @@
+# Ignoruj logi
+*.log
+
+# Ignoruj pliki konfiguracyjne środowiska
+.env, .git/*
+
+# Ignoruj folder tymczasowy
+tmp/
+
+# Ignoruj pliki systemowe
+__MACOSX/, .DS_Store
