@@ -158,6 +158,22 @@ def answers_payload_update_hook(qid, question_text, value, section=None, ref=Non
 st.set_page_config(page_title="DORA Compliance - MVP", layout="wide")
 
 
+
+
+# --- HASH → QUERY shim for Supabase magic-link tokens ---
+st.markdown("""
+<script>
+(function () {
+  var h = window.location.hash;
+  if (h && h.indexOf('access_token=') !== -1) {
+    var params = new URLSearchParams(h.substring(1));
+    var newUrl = window.location.pathname + "?" + params.toString();
+    window.history.replaceState({}, "", newUrl);
+    window.location.reload();
+  }
+})();
+</script>
+""", unsafe_allow_html=True)
 if "answers_payload" not in st.session_state:
     st.session_state["answers_payload"] = {}
 
