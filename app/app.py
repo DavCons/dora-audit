@@ -223,9 +223,53 @@ def require_auth_magic_link() -> bool:
             try:
                 sb.auth.exchange_code_for_session(code_param)
                 st.session_state["auth_ok"] = True
-                st.session_state["auth_source"] = "supabase"
+                try:
+                    u = sb.auth.get_user().user
+                    st.session_state["auth_user"] = (u.email if u else None) or "user"
+                except Exception:
+                    st.session_state["auth_user"] = "user"
+                st.markdown("""
+                <script>
+                  (function(){
+                    var clean = window.location.pathname;
+                    window.history.replaceState({}, "", clean);
+                  })();
+                </script>
+                """, unsafe_allow_html=True)
+                return True
             except Exception as e:
                 st.error("Auth exchange failed. The link may be expired or misconfigured.")
+    except Exception:
+        pass
+
+    # 1b) Handle ?access_token=...&refresh_token=... (z hasha przeniesione do query przez JS)
+    try:
+        qp = st.query_params if hasattr(st, "query_params") else st.experimental_get_query_params()
+        def _first(v):
+            return v[0] if isinstance(v, list) and v else (v if isinstance(v, str) else None)
+        at = _first(qp.get("access_token"))
+        rt = _first(qp.get("refresh_token"))
+        if at and rt:
+            try:
+                sb.auth.set_session(at, rt)  # <- kluczowe!
+                st.session_state["auth_ok"] = True
+                try:
+                    u = sb.auth.get_user().user
+                    st.session_state["auth_user"] = (u.email if u else None) or "user"
+                except Exception:
+                    st.session_state["auth_user"] = "user"
+                # Wyczyść URL z tokenów, żeby nie zostawały w pasku
+                st.markdown("""
+                <script>
+                  (function(){
+                    var clean = window.location.pathname;
+                    window.history.replaceState({}, "", clean);
+                  })();
+                </script>
+                """, unsafe_allow_html=True)
+                return True
+            except Exception as e:
+                st.error(f"Auth set_session failed: {e}")
     except Exception:
         pass
 
