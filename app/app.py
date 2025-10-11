@@ -1,9 +1,116 @@
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime
 
 st.set_page_config(page_title="DORA Compliance - MVP", layout="wide")
 st.title("DORA Audit — MVP")
+
+import os
+from supabase import create_client
+import streamlit as st
+
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
+APP_BASE_URL = os.getenv("APP_BASE_URL", "").strip()  # e.g., "http://localhost:8501" or "https://your.domain"
+
+_supabase = None
+def supa():
+    global _supabase
+    if _supabase is None:
+        if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+            st.warning("Supabase auth not configured. Set SUPABASE_URL and SUPABASE_ANON_KEY to enable magic-link login.")
+            return None
+        _supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    return _supabase
+
+def require_auth_magic_link() -> bool:
+    """
+    Returns True if user is authenticated (session present), else renders login UI and returns False.
+    Flow:
+      1) User enters email -> we call supabase.auth.sign_in_with_otp to send a magic link.
+      2) Supabase redirects back to APP_BASE_URL with ?code=... -> we exchange code for a session.
+    """
+    sb = supa()
+    if sb is None:
+        return True  # let app work without auth if not configured
+
+    # 1) If we came back from Supabase with ?code=..., exchange it for a session
+    try:
+        q = st.query_params if hasattr(st, "query_params") else st.experimental_get_query_params()
+        code_param = None
+        if isinstance(q, dict):
+            if hasattr(q, "get"):
+                v = q.get("code")
+                if isinstance(v, list):
+                    code_param = v[0] if v else None
+                elif isinstance(v, str):
+                    code_param = v
+        if code_param:
+            try:
+                sb.auth.exchange_code_for_session(code_param)
+                st.session_state["auth_ok"] = True
+                st.session_state["auth_source"] = "supabase"
+            except Exception as e:
+                st.error("Auth exchange failed. The link may be expired or misconfigured.")
+    except Exception:
+        pass
+
+    # 2) If we have an active session, we're good
+    try:
+        sess = sb.auth.get_session()
+        if sess and getattr(sess, "access_token", None):
+            st.session_state["auth_ok"] = True
+            st.session_state["auth_user"] = getattr(getattr(sess, "user", None), "email", None) or "user"
+    except Exception:
+        # Some client versions return dict-like
+        try:
+            sess = sb.auth.get_session()
+            if isinstance(sess, dict) and sess.get("access_token"):
+                st.session_state["auth_ok"] = True
+                st.session_state["auth_user"] = (sess.get("user") or {}).get("email") or "user"
+        except Exception:
+            pass
+
+    if st.session_state.get("auth_ok"):
+        return True
+
+    # 3) Render email form to send magic link
+    st.title("🔐 Sign in — Magic link")
+    with st.form("magic_link"):
+        email = st.text_input("Your email", value="", autocomplete="email")
+        submitted = st.form_submit_button("Send magic link")
+        if submitted:
+            if not email:
+                st.error("Enter your email.")
+            else:
+                try:
+                    # Try both call signatures (lib versions differ)
+                    try:
+                        sb.auth.sign_in_with_otp({"email": email, "options": {"email_redirect_to": APP_BASE_URL or None}})
+                    except Exception:
+                        sb.auth.sign_in_with_otp(email=email)
+                    st.success("Magic link sent! Check your inbox and click the link to come back here.")
+                except Exception as e:
+                    st.error("Failed to send magic link. Verify SUPABASE_URL/KEY and allowed redirects in Supabase.")
+    with st.expander("ℹ️ Configuration tips"):
+        st.markdown("""
+**Required env vars** (Docker/Compose):
+- `SUPABASE_URL` — your project URL (https://xxxx.supabase.co)
+- `SUPABASE_ANON_KEY` — anon public key
+- `APP_BASE_URL` — the URL users will hit (must be in Supabase Auth redirect allow-list)
+
+**In Supabase Dashboard → Auth → URL Configuration:**
+- Set **Site URL** to your `APP_BASE_URL` (e.g., `https://your.domain` or `http://<EC2-IP>:8501`)
+- Add `APP_BASE_URL` to **Redirect URLs**.
+
+Then click "Send magic link" — after email click, you return here with `?code=...`.
+""")
+    return False
+
+if not require_auth_magic_link():
+    st.stop()
+
 
 with st.sidebar:
     st.header("Ustawienia")
