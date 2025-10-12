@@ -1,23 +1,56 @@
-<script>
-(function(){
-  const EDGE_URL = "/api/request-magic-link";
-  const APP_URL  = "http://51.21.152.197:8501";
-  const email = document.getElementById('email');
-  const btn   = document.getElementById('send');
-  const msg   = document.getElementById('msg');
-  btn.addEventListener('click', async ()=>{
-    msg.textContent=""; msg.className="msg";
-    const e=(email.value||"").trim();
-    if(!e){ msg.textContent="Podaj e-mail."; msg.className="msg err"; return; }
-    try{
-      const res = await fetch(EDGE_URL, {
-        method: "POST",
-        headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ email: e, redirect_to: APP_URL })
-      });
-      if(!res.ok){ const t=await res.text(); msg.textContent="Błąd: "+t; msg.className="msg err"; return; }
-      msg.textContent="Wysłano. Sprawdź skrzynkę pocztową."; msg.className="msg ok"; email.value="";
-    }catch(err){ msg.textContent="Błąd sieci: "+(err?.message||err); msg.className="msg err"; }
-  });
-})();
-</script>
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DORA Audit — Zakup i dostęp</title>
+  <style>
+    :root{--bg:#0b0b0f;--card:#16161d;--border:#242435;--accent:#7c3aed}
+    body{font-family:system-ui,Arial,sans-serif;background:var(--bg);color:#e9e9f2;margin:0}
+    .wrap{max-width:900px;margin:0 auto;padding:24px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin:16px 0}
+    label{display:block;margin:.5rem 0 .25rem}
+    input[type=email]{width:100%;padding:.6rem;border:1px solid #3a3a4a;background:#0f0f14;border-radius:10px;color:#fff}
+    button{margin-top:1rem;padding:.6rem .9rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
+    .msg{margin-top:.75rem}.ok{color:#10b981}.err{color:#ef4444} a{color:#a78bfa}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>DORA Audit — Zakup i dostęp</h1>
+    <section class="card">
+      <h2>Wyślij magic-link</h2>
+      <label for="email">Adres e-mail</label>
+      <input id="email" type="email" placeholder="you@example.com" required>
+      <button id="send">Wyślij magic-link</button>
+      <div id="msg" class="msg"></div>
+      <p style="opacity:.8">Kliknięcie w link zaloguje Cię w aplikacji. Dostęp tylko dla adresów z whitelisty.</p>
+    </section>
+    <p><a href="/index.html">Strona startowa</a></p>
+  </div>
+
+  <script>
+  (function(){
+    const EDGE_URL = "/api/request-magic-link";
+    const APP_URL  = "http://51.21.152.197:8501";
+    const email = document.getElementById('email');
+    const btn   = document.getElementById('send');
+    const msg   = document.getElementById('msg');
+    btn.addEventListener('click', async ()=>{
+      msg.textContent=""; msg.className="msg";
+      const e=(email.value||"").trim();
+      if(!e){ msg.textContent="Podaj e-mail."; msg.className="msg err"; return; }
+      try{
+        const res = await fetch(EDGE_URL, {
+          method: "POST",
+          headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ email: e, redirect_to: APP_URL })
+        });
+        if(!res.ok){ const t=await res.text(); msg.textContent="Błąd: "+t; msg.className="msg err"; return; }
+        msg.textContent="Wysłano. Sprawdź skrzynkę pocztową."; msg.className="msg ok"; email.value="";
+      }catch(err){ msg.textContent="Błąd sieci: "+(err?.message||err); msg.className="msg err"; }
+    });
+  })();
+  </script>
+</body>
+</html>
