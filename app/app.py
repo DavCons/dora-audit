@@ -338,6 +338,12 @@ if not require_auth_magic_link():
 from datetime import datetime, timezone
 import time
 
+# Compat: st.rerun (new) / st.experimental_rerun (old)
+def _st_rerun():
+    fn = getattr(st, "rerun", None) or getattr(st, "experimental_rerun", None)
+    if callable(fn):
+        fn()
+
 def _get_session_safe(sb):
     """Supabase-py bywa różne w zależności od wersji – tu bezpieczny odczyt sesji."""
     try:
@@ -409,7 +415,7 @@ def session_bar():
                 ok, msg = _refresh_session_safe(sb)
                 if ok:
                     st.success("Session refreshed.")
-                    st.experimental_rerun()
+                    _st_rerun()
                 else:
                     st.warning(f"Could not refresh: {msg}")
         with col2:
@@ -421,13 +427,14 @@ def session_bar():
                 # wyczyść lokalne flagi
                 st.session_state.pop("auth_ok", None)
                 st.session_state.pop("auth_user", None)
-                st.experimental_rerun()
+                _st_rerun()
 
         # Ostrzegaj / odświeżaj w tle, gdy kończy się ważność
         if remaining <= 120:
             st.warning("Session is about to expire.")
             # delikatne auto-odświeżenie interfejsu, by zaciągnąć nowe tokeny (jeśli refresh działa)
-            st.experimental_rerun()
+            _st_rerun()
+
 
 # Wywołanie paska sesji
 session_bar()
@@ -707,7 +714,7 @@ def login_header():
                 pass
             st.session_state.pop("auth_ok", None)
             st.session_state.pop("auth_user", None)
-            st.experimental_rerun()
+            _st_rerun()
 
 # Wyświetl nagłówek logowania nad treścią aplikacji
 login_header()
