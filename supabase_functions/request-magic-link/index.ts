@@ -8,7 +8,7 @@ const APP_BASE_URL = Deno.env.get("APP_BASE_URL") || "http://localhost:8501";
 serve(async (req) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
   const auth = req.headers.get("authorization") || "";
-  const expected = Deno.env.get("CHECKOUT_FUNCTION_TOKEN");
+  const expected = Deno.env.get("EDGE_FUNCTION_TOKEN");
   if (expected && auth !== `Bearer ${expected}`) return new Response("Unauthorized", { status: 401 });
   try {
     const { email, redirect_to } = await req.json();
