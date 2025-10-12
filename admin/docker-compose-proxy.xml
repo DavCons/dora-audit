@@ -1,0 +1,17 @@
+services:
+  streamlit-app:
+    image: ghcr.io/davcons/dora-audit-app:latest
+    env_file: ./app.env
+    ports: ["8501:8501"]
+    restart: unless-stopped
+
+  site:
+    image: ghcr.io/davcons    image: nginx:stable
+    ports:
+      - "8080:80"
+    volumes:
+      - ./site:/usr/share/nginx/html:ro
+      - ./site/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./secrets/checkout_token.conf:/etc/nginx/includes/checkout_token.conf:ro
+
+chmod 0400 secrets/checkout_token.conf

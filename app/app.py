@@ -340,8 +340,43 @@ Then click "Send magic link" — after email click, you return here with `?code=
 """)
     return False
 
+# ======== ENFORCE WHITELIST (allowed_emails) ========
+
+def _enforce_allowed_email(sb):
+    """
+    Po udanym logowaniu (magic-link) sprawdza,
+    czy e-mail użytkownika znajduje się w tabeli allowed_emails.
+    Jeśli nie — blokuje dostęp do aplikacji.
+    """
+    try:
+        user = sb.auth.get_user().user
+        email = getattr(user, "email", None) if user else None
+    except Exception:
+        email = None
+
+    if not email:
+        st.error("Nie udało się odczytać adresu e-mail z sesji.")
+        st.stop()
+
+    try:
+        # Zapytanie do tabeli public.allowed_emails w Supabase
+        data = sb.table("allowed_emails").select("email").eq("email", email).limit(1).execute()
+
+        # Obsługa w zależności od wersji supabase-py
+        rows = getattr(data, "data", None) if hasattr(data, "data") else data.get("data", [])
+        if not rows:
+            st.error("❌ Dostęp zabroniony. Ten adres e-mail nie ma uprawnień do aplikacji.")
+            st.stop()
+    except Exception as e:
+        st.error(f"⚠️ Błąd weryfikacji uprawnień: {e}")
+        st.stop()
+
+
 if not require_auth_magic_link():
     st.stop()
+
+# Po pomyślnym logowaniu — sprawdź uprawnienia
+_enforce_allowed_email(supa())
 
 # ======== SESSION BAR (Supabase) ========
 from datetime import datetime, timezone
@@ -401,6 +436,69 @@ def _refresh_session_safe(sb):
         except Exception as e2:
             return False, f"refresh failed: {e1} / {e2}"
     return False, "unknown"
+
+# ======== SESSION AUTO-REFRESH + DEBUG LOG ========
+import time
+import streamlit as st
+
+def _log_supabase_error(msg, exc=None):
+    logs = st.session_state.setdefault("_supabase_logs", [])
+    if exc:
+        msg = f"{msg}: {exc}"
+    logs.append(msg)
+
+def _get_session_info(sb):
+    """Zwraca {'email', 'expires_at'} z bezpiecznym fallbackiem."""
+    try:
+        sess = sb.auth.get_session()
+    except Exception as e:
+        _log_supabase_error("get_session failed", e)
+        sess = None
+    user = getattr(sess, "user", None)
+    email = getattr(user, "email", None) if user else None
+    exp = getattr(sess, "expires_at", None)
+    if not exp:
+        exp = int(time.time()) + 3600
+    return {"email": email, "expires_at": int(exp)}
+
+def auto_refresh_session(sb, warn_at=180, reload_delay=30):
+    """
+    Gdy do wygaśnięcia ≤ warn_at (s), spróbuj odświeżyć sesję raz na cykl.
+    Jeśli nie wyjdzie – zaplanuj miękki reload po 'reload_delay' sekundach.
+    """
+    s = _get_session_info(sb)
+    now = int(time.time())
+    remaining = s["expires_at"] - now
+    if remaining <= warn_at:
+        st.sidebar.warning(f"Session expires in {max(0, remaining)//60}m {max(0, remaining)%60}s")
+        # próbuj odświeżyć max 1x na cykl
+        if not st.session_state.get("_did_refresh_attempt"):
+            st.session_state["_did_refresh_attempt"] = True
+            try:
+                sb.auth.refresh_session()
+                st.sidebar.success("Session refreshed")
+                _st_rerun()
+                return
+            except Exception as e:
+                _log_supabase_error("refresh_session failed", e)
+        # fallback: miękki reload raz
+        if not st.session_state.get("_soft_reload_scheduled"):
+            st.session_state["_soft_reload_scheduled"] = True
+            st.components.v1.html(
+                f"<script>setTimeout(function(){{ parent.location.reload(); }}, {reload_delay*1000});</script>",
+                height=0
+            )
+
+def show_supabase_debug_panel():
+    """Panel w sidebarze z ostatnimi błędami Supabase."""
+    with st.sidebar.expander("🛠 Debug (Supabase)", expanded=False):
+        logs = st.session_state.get("_supabase_logs") or []
+        if logs:
+            for i, m in enumerate(logs[-50:], 1):
+                st.text(f"{i:02d}. {m}")
+        else:
+            st.caption("Brak błędów.")
+# ======== END ========
 
 def session_bar():
     sb = supa()

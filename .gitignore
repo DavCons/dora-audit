@@ -2,7 +2,7 @@
 *.log
 
 # Ignoruj pliki konfiguracyjne środowiska
-.env, .git/*
+.env, .git/*. secrets/*
 
 # Ignoruj folder tymczasowy
 tmp/

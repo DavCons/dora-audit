@@ -1,54 +1,10 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DORA Audit — Checkout & Access</title>
-<style>
-  :root{--bg:#0b0b0f;--card:#16161d;--border:#242435;--accent:#7c3aed}
-  body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:#0b0b0f;color:#e9e9f2;margin:0}
-  .wrap{max-width:900px;margin:0 auto;padding:24px}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin:16px 0}
-  h1{margin:8px 0 16px}
-  label{display:block;margin:.5rem 0 .25rem}
-  input[type=email]{width:100%;padding:.6rem;border:1px solid #3a3a4a;background:#0f0f14;border-radius:10px;color:#fff}
-  button{margin-top:1rem;padding:.6rem .9rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
-  a{color:#a78bfa;text-decoration:none}
-  .msg{margin-top:.75rem}.ok{color:#10b981}.err{color:#ef4444}
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>DORA Audit — Checkout & Access</h1>
-
-    <section class="card">
-      <h2>1) Purchase access</h2>
-      <p>After purchase you can request a magic link to the email used at checkout.</p>
-    </section>
-
-    <section class="card">
-      <h2>2) Send a magic link to your email</h2>
-      <label for="email">Your email</label>
-      <input id="email" type="email" placeholder="you@example.com" required>
-      <button id="send">Send magic link</button>
-      <div id="msg" class="msg"></div>
-      <p style="opacity:.8;margin-top:8px">The app is restricted to whitelisted emails.</p>
-    </section>
-
-    <section class="card">
-      <h2>FAQ</h2>
-      <p><strong>Why might my email be denied?</strong> — Your address must exist in <code>allowed_emails</code> (added upon purchase or by support).</p>
-      <p><strong>No email received?</strong> — Check spam and retry. Use the same address as during checkout.</p>
-      <p><a href="./index_en.html">Back</a></p>
-    </section>
-  </div>
-
 <script>
 (function(){
-  const EDGE_URL = "https://jizmjayxnidelnnumcja.supabase.co/functions/v1/request-magic-link";
+  const EDGE_URL = "/api/request-magic-link";
   const APP_URL  = "http://51.21.152.197:8501";
   const email = document.getElementById('email');
-  const btn = document.getElementById('send');
-  const msg = document.getElementById('msg');
+  const btn   = document.getElementById('send');
+  const msg   = document.getElementById('msg');
   btn.addEventListener('click', async ()=>{
     msg.textContent=""; msg.className="msg";
     const e=(email.value||"").trim();
@@ -65,5 +21,3 @@
   });
 })();
 </script>
-</body>
-</html>

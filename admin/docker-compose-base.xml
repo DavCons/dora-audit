@@ -1,0 +1,12 @@
+iservices:
+  streamlit-app:
+    image: ghcr.io/davcons/dora-audit-app:latest
+    env_file: ./app.env
+    ports: ["8501:8501"]
+    restart: unless-stopped
+
+  site:
+    image: ghcr.io/davcons/dora-audit-site:latest
+    ports: ["8080:80"]
+    restart: unless-stopped
+

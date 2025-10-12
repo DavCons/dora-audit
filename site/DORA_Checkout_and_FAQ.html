@@ -1,54 +1,10 @@
-<!doctype html>
-<html lang="pl">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DORA Audit — Zakup i dostęp</title>
-<style>
-  :root{--bg:#0b0b0f;--card:#16161d;--border:#242435;--accent:#7c3aed}
-  body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:#0b0b0f;color:#e9e9f2;margin:0}
-  .wrap{max-width:900px;margin:0 auto;padding:24px}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin:16px 0}
-  h1{margin:8px 0 16px}
-  label{display:block;margin:.5rem 0 .25rem}
-  input[type=email]{width:100%;padding:.6rem;border:1px solid #3a3a4a;background:#0f0f14;border-radius:10px;color:#fff}
-  button{margin-top:1rem;padding:.6rem .9rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
-  a{color:#a78bfa;text-decoration:none}
-  .msg{margin-top:.75rem}.ok{color:#10b981}.err{color:#ef4444}
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>DORA Audit — Zakup i dostęp</h1>
-
-    <section class="card">
-      <h2>1) Kup dostęp</h2>
-      <p>Po zakupie możesz od razu poprosić o link logujący (magic-link) na adres e-mail użyty przy płatności.</p>
-    </section>
-
-    <section class="card">
-      <h2>2) Wyślij magic-link na swój e-mail</h2>
-      <label for="email">Adres e-mail</label>
-      <input id="email" type="email" placeholder="you@example.com" required>
-      <button id="send">Wyślij magic-link</button>
-      <div id="msg" class="msg"></div>
-      <p style="opacity:.8;margin-top:8px">Kliknięcie w link zaloguje Cię w aplikacji. Dostęp jest ograniczony do adresów e-mail z whitelisty.</p>
-    </section>
-
-    <section class="card">
-      <h2>FAQ</h2>
-      <p><strong>Dlaczego mój e-mail może nie mieć dostępu?</strong> — Adres musi znajdować się w tabeli <code>allowed_emails</code> (dodawany po zakupie lub ręcznie przez support).</p>
-      <p><strong>Nie doszedł e-mail?</strong> — Sprawdź spam i spróbuj ponownie. Upewnij się, że używasz tego samego adresu co przy płatności.</p>
-      <p><a href="./index_pl.html">Powrót</a></p>
-    </section>
-  </div>
-
 <script>
 (function(){
-  const EDGE_URL = "https://jizmjayxnidelnnumcja.supabase.co/functions/v1/request-magic-link";
+  const EDGE_URL = "/api/request-magic-link";
   const APP_URL  = "http://51.21.152.197:8501";
   const email = document.getElementById('email');
-  const btn = document.getElementById('send');
-  const msg = document.getElementById('msg');
+  const btn   = document.getElementById('send');
+  const msg   = document.getElementById('msg');
   btn.addEventListener('click', async ()=>{
     msg.textContent=""; msg.className="msg";
     const e=(email.value||"").trim();
@@ -65,5 +21,3 @@
   });
 })();
 </script>
-</body>
-</html>
