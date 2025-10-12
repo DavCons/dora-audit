@@ -1,5 +1,5 @@
 FROM nginx:stable
-RUN rm -rf /usr/share/nginx/html/*
+#RUN rm -rf /usr/share/nginx/html/*
 #COPY site/ /usr/share/nginx/html/
 COPY nginx/conf.d/10-site.conf /etc/nginx/conf.d/10-site.conf
 COPY nginx/conf.d/blank.conf /etc/nginx/conf.d/default.conf
