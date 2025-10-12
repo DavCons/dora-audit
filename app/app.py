@@ -275,7 +275,16 @@ def require_auth_magic_link() -> bool:
                 """, unsafe_allow_html=True)
                 return True
             except Exception as e:
-                st.error(f"Auth set_session failed: {e}")
+                # tokeny mogły być już unieważnione (np. po wylogowaniu) – wyczyść URL i pokaż łagodny komunikat
+                st.components.v1.html("""
+                <script>
+                  (function(){
+                    var clean = parent.location.pathname;
+                    parent.history.replaceState({}, "", clean);
+                  })();
+                </script>
+                """, height=0)
+                st.info("Sesja została zakończona.")
     except Exception:
         pass
 
@@ -411,7 +420,7 @@ def session_bar():
 
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("Refresh session", use_container_width=True):
+            if st.button("Refresh session", width='stretch'):
                 ok, msg = _refresh_session_safe(sb)
                 if ok:
                     st.success("Session refreshed.")
@@ -419,14 +428,21 @@ def session_bar():
                 else:
                     st.warning(f"Could not refresh: {msg}")
         with col2:
-            if st.button("Sign out", use_container_width=True):
+            if st.button("Sign out", width='stretch'):
                 try:
                     sb.auth.sign_out()
                 except Exception:
                     pass
-                # wyczyść lokalne flagi
                 st.session_state.pop("auth_ok", None)
                 st.session_state.pop("auth_user", None)
+                st.components.v1.html("""
+                <script>
+                  (function(){
+                    var clean = parent.location.pathname;
+                    parent.history.replaceState({}, "", clean);
+                  })();
+                </script>
+                """, height=0)
                 _st_rerun()
 
         # Ostrzegaj / odświeżaj w tle, gdy kończy się ważność
@@ -707,13 +723,21 @@ def login_header():
     with col1:
         st.success(f"✅ Zalogowano jako **{email}**")
     with col2:
-        if st.button("Wyloguj się", use_container_width=True):
+        if st.button("Wyloguj się", width='stretch'):
             try:
                 sb.auth.sign_out()
             except Exception:
                 pass
             st.session_state.pop("auth_ok", None)
             st.session_state.pop("auth_user", None)
+            st.components.v1.html("""
+            <script>
+              (function(){
+                var clean = parent.location.pathname;
+                parent.history.replaceState({}, "", clean);
+              })();
+            </script>
+            """, height=0)
             _st_rerun()
 
 # Wyświetl nagłówek logowania nad treścią aplikacji
