@@ -107,7 +107,7 @@ def list_assessments_ui(client):
     df_hist = pd.DataFrame(rows)
     # Keep common columns
     keep_cols = [c for c in ["created_at","classification","scores","email","id"] if c in df_hist.columns]
-    st.dataframe(df_hist[keep_cols] if keep_cols else df_hist, use_container_width=True)
+    st.dataframe(df_hist[keep_cols] if keep_cols else df_hist, width='stretch')
     # Optional: raw JSON download
     st.download_button("Pobierz historię (JSON)", data=df_hist.to_json(orient="records", force_ascii=False).encode("utf-8"), file_name="assessments_history.json", mime="application/json")
 
@@ -667,7 +667,7 @@ with st.expander("Historia zapisów (Supabase)", expanded=False):
                         view = view[view["_cls"] == cls]
 
             keep = [c for c in ["created_at","classification","email","id","scores"] if c in view.columns]
-            st.dataframe(view[keep] if keep else view, use_container_width=True, height=320)
+            st.dataframe(view[keep] if keep else view, width='stretch', height=320)
 
             # Preview
             st.write("**Podgląd wybranej oceny**")
@@ -697,7 +697,7 @@ with st.expander("Historia zapisów (Supabase)", expanded=False):
                             if gaps.empty:
                                 st.write("Brak luk.")
                             else:
-                                st.dataframe(gaps, use_container_width=True)
+                                st.dataframe(gaps, width='stretch')
                                 import io
                                 csvb = gaps.to_csv(index=False).encode("utf-8")
                                 st.download_button("Pobierz luki (CSV) dla tego zapisu", data=csvb, file_name=f"gaps_{chosen}.csv", mime="text/csv")
