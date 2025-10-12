@@ -159,21 +159,28 @@ st.set_page_config(page_title="DORA Compliance - MVP", layout="wide")
 
 
 
+import streamlit as st
+import streamlit.components.v1 as components
 
-# --- HASH → QUERY shim for Supabase magic-link tokens ---
-st.markdown("""
+# --- HASH → QUERY shim (działa w iframe; odwołanie do parent.location) ---
+components.html("""
 <script>
 (function () {
-  var h = window.location.hash;
-  if (h && h.indexOf('access_token=') !== -1) {
-    var params = new URLSearchParams(h.substring(1));
-    var newUrl = window.location.pathname + "?" + params.toString();
-    window.history.replaceState({}, "", newUrl);
-    window.location.reload();
+  try {
+    var h = parent.location.hash || "";
+    if (h && h.indexOf('access_token=') !== -1) {
+      var params = new URLSearchParams(h.substring(1)); // obetnij '#'
+      var newUrl = parent.location.pathname + "?" + params.toString();
+      parent.history.replaceState({}, "", newUrl);
+      parent.location.reload();
+    }
+  } catch (e) {
+    // cicho ignoruj
   }
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
+
 if "answers_payload" not in st.session_state:
     st.session_state["answers_payload"] = {}
 
