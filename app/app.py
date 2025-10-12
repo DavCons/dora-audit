@@ -158,22 +158,28 @@ def answers_payload_update_hook(qid, question_text, value, section=None, ref=Non
 st.set_page_config(page_title="DORA Compliance - MVP", layout="wide")
 
 
+import streamlit as st
+import streamlit.components.v1 as components
 
-
-# --- HASH → QUERY shim for Supabase magic-link tokens ---
-st.markdown("""
+# --- HASH → QUERY shim (działa w iframe; odwołanie do parent.location) ---
+components.html("""
 <script>
 (function () {
-  var h = window.location.hash;
-  if (h && h.indexOf('access_token=') !== -1) {
-    var params = new URLSearchParams(h.substring(1));
-    var newUrl = window.location.pathname + "?" + params.toString();
-    window.history.replaceState({}, "", newUrl);
-    window.location.reload();
+  try {
+    var h = parent.location.hash || "";
+    if (h && h.indexOf('access_token=') !== -1) {
+      var params = new URLSearchParams(h.substring(1)); // obetnij '#'
+      var newUrl = parent.location.pathname + "?" + params.toString();
+      parent.history.replaceState({}, "", newUrl);
+      parent.location.reload();
+    }
+  } catch (e) {
+    // cicho ignoruj
   }
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
+
 if "answers_payload" not in st.session_state:
     st.session_state["answers_payload"] = {}
 
@@ -328,6 +334,104 @@ Then click "Send magic link" — after email click, you return here with `?code=
 if not require_auth_magic_link():
     st.stop()
 
+# ======== SESSION BAR (Supabase) ========
+from datetime import datetime, timezone
+import time
+
+def _get_session_safe(sb):
+    """Supabase-py bywa różne w zależności od wersji – tu bezpieczny odczyt sesji."""
+    try:
+        sess = sb.auth.get_session()
+    except Exception:
+        sess = None
+    # Obsłuż obiekt i dict
+    if hasattr(sess, "access_token"):
+        access_token = getattr(sess, "access_token", None)
+        refresh_token = getattr(sess, "refresh_token", None)
+        user = getattr(sess, "user", None)
+        email = getattr(user, "email", None) if user else None
+        # v2 zwykle ma epoch w 'expires_at'
+        exp = getattr(sess, "expires_at", None)
+    elif isinstance(sess, dict):
+        access_token = sess.get("access_token")
+        refresh_token = sess.get("refresh_token")
+        email = ((sess.get("user") or {}).get("email"))
+        exp = sess.get("expires_at")
+    else:
+        access_token = refresh_token = email = exp = None
+    # W niektórych wersjach brak expires_at → wylicz z now + 3600 jako fallback
+    if not exp:
+        exp = int(time.time()) + 3600
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "email": email,
+        "expires_at": int(exp),
+    }
+
+def _refresh_session_safe(sb):
+    """Spróbuj odświeżyć sesję (różne wersje klienta)."""
+    try:
+        # supabase-py v2
+        sb.auth.refresh_session()
+        return True, "refreshed"
+    except Exception as e1:
+        # Fallback – jeśli mamy refresh_token zapisany lokalnie
+        try:
+            s = _get_session_safe(sb)
+            if s["refresh_token"]:
+                # W wielu wersjach set_session() przyjmuje (access, refresh); access może być None
+                sb.auth.set_session(s.get("access_token"), s["refresh_token"])
+                return True, "set_session via refresh_token"
+        except Exception as e2:
+            return False, f"refresh failed: {e1} / {e2}"
+    return False, "unknown"
+
+def session_bar():
+    sb = supa()
+    if not sb:
+        return  # auth wyłączone
+
+    s = _get_session_safe(sb)
+    now = int(time.time())
+    remaining = max(0, s["expires_at"] - now)
+    exp_dt = datetime.fromtimestamp(s["expires_at"], tz=timezone.utc).astimezone()  # lokalny czas
+
+    with st.sidebar:
+        st.markdown("### 🔐 Session")
+        st.write(f"**User:** {s['email'] or 'unknown'}")
+        st.write(f"**Expires:** {exp_dt.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        st.write(f"**Time left:** {remaining // 60} min {remaining % 60} s")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Refresh session", use_container_width=True):
+                ok, msg = _refresh_session_safe(sb)
+                if ok:
+                    st.success("Session refreshed.")
+                    st.experimental_rerun()
+                else:
+                    st.warning(f"Could not refresh: {msg}")
+        with col2:
+            if st.button("Sign out", use_container_width=True):
+                try:
+                    sb.auth.sign_out()
+                except Exception:
+                    pass
+                # wyczyść lokalne flagi
+                st.session_state.pop("auth_ok", None)
+                st.session_state.pop("auth_user", None)
+                st.experimental_rerun()
+
+        # Ostrzegaj / odświeżaj w tle, gdy kończy się ważność
+        if remaining <= 120:
+            st.warning("Session is about to expire.")
+            # delikatne auto-odświeżenie interfejsu, by zaciągnąć nowe tokeny (jeśli refresh działa)
+            st.experimental_rerun()
+
+# Wywołanie paska sesji
+session_bar()
+# ======== END SESSION BAR ========
 
 with st.sidebar:
     st.header("Ustawienia")
