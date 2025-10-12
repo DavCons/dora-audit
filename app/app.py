@@ -159,28 +159,21 @@ st.set_page_config(page_title="DORA Compliance - MVP", layout="wide")
 
 
 
-import streamlit as st
-import streamlit.components.v1 as components
 
-# --- HASH → QUERY shim (działa w iframe; odwołanie do parent.location) ---
-components.html("""
+# --- HASH → QUERY shim for Supabase magic-link tokens ---
+st.markdown("""
 <script>
 (function () {
-  try {
-    var h = parent.location.hash || "";
-    if (h && h.indexOf('access_token=') !== -1) {
-      var params = new URLSearchParams(h.substring(1)); // obetnij '#'
-      var newUrl = parent.location.pathname + "?" + params.toString();
-      parent.history.replaceState({}, "", newUrl);
-      parent.location.reload();
-    }
-  } catch (e) {
-    // cicho ignoruj
+  var h = window.location.hash;
+  if (h && h.indexOf('access_token=') !== -1) {
+    var params = new URLSearchParams(h.substring(1));
+    var newUrl = window.location.pathname + "?" + params.toString();
+    window.history.replaceState({}, "", newUrl);
+    window.location.reload();
   }
 })();
 </script>
-""", height=0)
-
+""", unsafe_allow_html=True)
 if "answers_payload" not in st.session_state:
     st.session_state["answers_payload"] = {}
 
@@ -583,3 +576,35 @@ with st.expander("Historia zapisów (Supabase)", expanded=False):
                                 st.download_button("Pobierz luki (CSV) dla tego zapisu", data=csvb, file_name=f"gaps_{chosen}.csv", mime="text/csv")
                 except Exception as e:
                     st.error(f"Nie udało się zbudować podglądu: {e}")
+
+
+# ======== LOGIN STATUS HEADER ========
+import streamlit as st
+
+def login_header():
+    sb = supa()
+    if not sb:
+        return
+    try:
+        u = sb.auth.get_user().user
+        email = getattr(u, "email", None) if u else None
+    except Exception:
+        email = st.session_state.get("auth_user")
+    if not email:
+        return
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.success(f"✅ Zalogowano jako **{email}**")
+    with col2:
+        if st.button("Wyloguj się", use_container_width=True):
+            try:
+                sb.auth.sign_out()
+            except Exception:
+                pass
+            st.session_state.pop("auth_ok", None)
+            st.session_state.pop("auth_user", None)
+            st.experimental_rerun()
+
+# Wyświetl nagłówek logowania nad treścią aplikacji
+login_header()
+# ======== END LOGIN STATUS HEADER ========
