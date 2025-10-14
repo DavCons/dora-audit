@@ -1,74 +1,48 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DORA Audit — Checkout & Access</title>
-<style>
-  :root{--bg:#0b0b0f;--card:#16161d;--border:#242435;--accent:#7c3aed}
-  body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;background:#0b0b0f;color:#e9e9f2;margin:0}
-  .wrap{max-width:900px;margin:0 auto;padding:24px}
-  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin:16px 0}
-  h1{margin:8px 0 16px}
-  label{display:block;margin:.5rem 0 .25rem}
-  input[type=email]{width:100%;padding:.6rem;border:1px solid #3a3a4a;background:#0f0f14;border-radius:10px;color:#fff}
-  button{margin-top:1rem;padding:.6rem .9rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
-  a{color:#a78bfa;text-decoration:none}
-  .msg{margin-top:.75rem}.ok{color:#10b981}.err{color:#ef4444}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DORA Audit — Checkout & Access</title>
+  <link rel="stylesheet" href="/assets/common.css">
+  <link rel="preload" href="/assets/checkout.js" as="script">
+  <link rel="preload" href="/assets/login.js" as="script">
 </head>
 <body>
   <div class="wrap">
+    <div class="lang-switch" style="text-align:right">
+      <a href="/DORA_Checkout_and_FAQ.html" lang="pl">🇵🇱 Polski</a> |
+      <a href="/DORA_Checkout_and_FAQ_en.html" lang="en" aria-current="page">🇬🇧 English</a>
+    </div>
+
     <h1>DORA Audit — Checkout & Access</h1>
 
     <section class="card">
-      <h2>1) Purchase access</h2>
-      <p>After purchase you can request a magic link to the email used at checkout.</p>
-      <!-- Put your Stripe Checkout button here -->
-      <!-- <a class="btn" href="...">Buy now</a> -->
+      <h2>1) After purchase — send magic link (adds to allow-list)</h2>
+      <label for="email_checkout">Buyer’s email address</label>
+      <input id="email_checkout" type="email" placeholder="buyer@example.com" required>
+      <button id="send_checkout">Send magic link (checkout)</button>
+      <div id="msg_checkout" class="msg"></div>
+      <p class="muted">
+        We will add this email to the allow-list and send a magic sign-in link.
+      </p>
     </section>
 
     <section class="card">
-      <h2>2) Send a magic link to your email</h2>
-      <label for="email">Your email</label>
-      <input id="email" type="email" placeholder="you@example.com" required>
-      <button id="send">Send magic link</button>
-      <div id="msg" class="msg"></div>
-      <p style="opacity:.8;margin-top:8px">The app is restricted to whitelisted emails.</p>
+      <h2>2) Sign-in — allowed emails only</h2>
+      <label for="email_login">Email address</label>
+      <input id="email_login" type="email" placeholder="you@example.com" required>
+      <button id="send_login">Send magic link (login)</button>
+      <div id="msg_login" class="msg"></div>
+      <p class="muted">
+        Access to the app is restricted to allow-listed emails.
+      </p>
     </section>
 
-    <section class="card">
-      <h2>FAQ</h2>
-      <p><strong>Why might my email be denied?</strong> — Your address must exist in <code>allowed_emails</code> (added upon purchase or by support).</p>
-      <p><strong>No email received?</strong> — Check spam and retry. Make sure you use the same address as during checkout.</p>
-      <p><a href="./index_en.html">Back</a></p>
-    </section>
+    <p><a href="/index.html">Back to start page</a></p>
   </div>
 
-<script>
-(function(){
-  const EDGE_URL = "%EDGE_FUNCTION_URL%";    // ← REPLACE
-  const TOKEN    = "%EDGE_FUNCTION_TOKEN%";  // ← optional; remove Authorization if unused
-  const APP_URL  = "%APP_BASE_URL%";         // ← REPLACE
-
-  const email = document.getElementById('email');
-  const btn = document.getElementById('send');
-  const msg = document.getElementById('msg');
-
-  btn.addEventListener('click', async ()=>{
-    msg.textContent=""; msg.className="msg";
-    const e=(email.value||"").trim();
-    if(!e){ msg.textContent="Please enter your email."; msg.className="msg err"; return; }
-    try{
-      const res = await fetch(EDGE_URL, {
-        method: "POST",
-        headers: Object.assign({"Content-Type":"application/json"}, TOKEN?{"Authorization":"Bearer "+TOKEN}:{}) ,
-        body: JSON.stringify({ email: e, redirect_to: APP_URL })
-      });
-      if(!res.ok){ const t=await res.text(); msg.textContent="Error: "+t; msg.className="msg err"; return; }
-      msg.textContent="Magic link sent. Check your inbox."; msg.className="msg ok"; email.value="";
-    }catch(err){ msg.textContent="Network error: "+(err?.message||err); msg.className="msg err"; }
-  });
-})();
-</script>
+  <script src="/assets/checkout.js" defer></script>
+  <script src="/assets/login.js" defer></script>
 </body>
 </html>

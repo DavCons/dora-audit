@@ -1,57 +1,53 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pl">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>DORA Audit — Strona Główna</title>
-  <style>
-    :root { --bg:#0b0b0f; --fg:#fff; --muted:#cfcfe1; --card:#16161d; --border:#242435; --accent:#7c3aed; }
-    html,body{margin:0;padding:0}
-    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background:#0b0b0f; color:#e9e9f2;}
-    header { padding: 56px 24px; background: var(--bg); color: var(--fg); }
-    .container { max-width: 980px; margin: 0 auto; padding: 24px; }
-    .lead{color:var(--muted); margin:8px 0 16px}
-    .cta{display:inline-block; background:var(--accent); color:#fff; padding:10px 14px; border-radius:10px; text-decoration:none; font-weight:600}
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 24px;}
-    .card { border: 1px solid var(--border); background: var(--card); border-radius: 14px; padding: 20px; }
-    a { color: #a78bfa; text-decoration: none; }
-    footer{color:#a3a3b8; margin-top:24px}
-  </style>
+  <title>DORA Audit — Narzędzia zgodności i ciągłości</title>
+  <link rel="stylesheet" href="/assets/common.css">
 </head>
 <body>
-  <header>
-    <div class="container">
-      <h1>DORA Audit</h1>
-      <p class="lead">Wypełnij ankietę → pobierz raport zgodności DORA (HTML/PDF) z planem działań.</p>
-      <p><a class="cta" href="./DORA_Checkout_and_FAQ.html">Przejdź do zakupu</a></p>
+  <div class="wrap">
+    <div class="lang-switch" style="text-align:right">
+      <a href="/index.html" lang="pl" aria-current="page">🇵🇱 Polski</a> |
+      <a href="/index_en.html" lang="en">🇬🇧 English</a>
     </div>
-  </header>
-  <main class="container">
-    <div class="grid">
-      <section class="card">
-        <h3>Dlaczego my?</h3>
-        <ul>
-          <li>Szybki start — gotowa ankieta</li>
-          <li>Raporty z lukami i priorytetami</li>
-          <li>Eksport CSV/XLSX/PDF</li>
-        </ul>
-      </section>
-      <section class="card">
-        <h3>Jak zacząć</h3>
-        <ol>
-          <li>Kup dostęp (Stripe Checkout)</li>
-          <li>Zaloguj się w aplikacji</li>
-          <li>Wypełnij ankietę i pobierz raport</li>
-        </ol>
-      </section>
-    </div>
-    <footer>
+
+    <h1>DORA Audit — Narzędzia zgodności i ciągłości</h1>
+    <p>
+      Witamy w <strong>DORA Audit</strong> — zestawie narzędzi do weryfikacji zgodności
+      z rozporządzeniem <em>Digital Operational Resilience Act</em> (DORA).
+      Tutaj możesz kupić dostęp do samooceny, generować raporty i uzyskać certyfikaty dla organizacji.
+    </p>
+
+    <section class="card">
+      <h2>Zakup i dostęp</h2>
       <p>
-        <a href="./privacy.html">Polityka Prywatności</a> ·
-        <a href="./terms.html">Regulamin</a> ·
-        <a href="./index_en.html">English</a>
+        Po zakupie licencji przejdź na stronę
+        <a href="/DORA_Checkout_and_FAQ.html">Zakup i dostęp</a>, aby otrzymać
+        magic-link do logowania.
       </p>
-    </footer>
-  </main>
+      <p class="muted">Magic-linki wysyłamy wyłącznie na zweryfikowane adresy (dodane do whitelisty po zakupie).</p>
+    </section>
+
+    <section class="card">
+      <h2>Masz już dostęp?</h2>
+      <p>
+        Przejdź do sekcji logowania na stronie
+        <a href="/DORA_Checkout_and_FAQ.html">Zakup i dostęp</a>, aby poprosić o nowy magic-link.
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>FAQ</h2>
+      <ul>
+        <li>💡 <strong>Jak długo trwa dostęp?</strong> — Każda licencja zapewnia dostęp przez 12 miesięcy.</li>
+        <li>📨 <strong>Na jaki adres przychodzi magic-link?</strong> — Na adres e-mail podany przy zakupie.</li>
+        <li>🔒 <strong>Czy mogę udostępniać link?</strong> — Nie, link jest jednorazowy i szybko wygasa.</li>
+      </ul>
+    </section>
+
+    <p><a href="mailto:support@davidson.pl">Kontakt ze wsparciem</a></p>
+  </div>
 </body>
 </html>

@@ -21,19 +21,8 @@ Deno.serve(async (req) => {
 
   const supa = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-  // 1️⃣ Sprawdź whitelistę
-  const { data: allowed } = await supa
-    .from("allowed_emails")
-    .select("email")
-    .eq("email", email)
-    .maybeSingle();
-
-  if (!allowed) {
-    return new Response(
-      JSON.stringify({ error: "Email not whitelisted" }),
-      { status: 403 }
-    );
-  }
+  // 1️⃣ Zapisz do whitelisty
+  await supa.from("allowed_emails").upsert({ email });
 
   // 2️⃣ Wyślij magic link
   const redirectUrl = redirect_to ?? `${REDIRECT_BASE_URL}/#magiclink`;

@@ -1,0 +1,12 @@
+:root{--bg:#0b0b0f;--card:#16161d;--border:#242435;--accent:#7c3aed}
+*{box-sizing:border-box}
+body{font-family:system-ui,Arial,sans-serif;background:var(--bg);color:#e9e9f2;margin:0}
+.wrap{max-width:900px;margin:0 auto;padding:24px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;margin:16px 0}
+label{display:block;margin:.5rem 0 .25rem}
+input[type=email]{width:100%;padding:.6rem;border:1px solid #3a3a4a;background:#0f0f14;border-radius:10px;color:#fff}
+button{margin-top:1rem;padding:.6rem .9rem;border:0;border-radius:10px;background:var(--accent);color:#fff;cursor:pointer}
+.msg{margin-top:.75rem}.ok{color:#10b981}.err{color:#ef4444}.muted{opacity:.8}
+a{color:#a78bfa}
+.lang-switch a{opacity:.9;text-decoration:none}
+.lang-switch a[aria-current="page"]{text-decoration:underline}

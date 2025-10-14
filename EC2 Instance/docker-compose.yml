@@ -1,0 +1,21 @@
+services:
+  streamlit-app:
+    image: ghcr.io/davcons/dora-audit-app:latest
+    env_file: ./app.env
+    ports:
+      - "8501:8501"
+    restart: unless-stopped
+
+  site:
+    image: ghcr.io/davcons/dora-audit-site:latest   # <-- statyki w obrazie z GitHub Packages
+    ports:
+      - "8080:80"
+    # UWAGA: brak bind-mountu ./site:/usr/share/nginx/html – NIE nadpisujemy plików z obrazu
+    volumes:
+      # Twój server config (proxy /api/request-magic-link, CSP, rate-limit, 444)
+      - ./nginx/conf.d/10-site.conf:/etc/nginx/conf.d/10-site.conf:ro
+      # Wyłącz domyślny server z obrazu (jeśli istnieje) – pusty plik
+      - ./nginx/conf.d/blank.conf:/etc/nginx/conf.d/default.conf:ro
+      # Sekret z tokenem Bearer dla proxowanego wywołania do Supabase
+      - ./secrets/edge_function_token.conf:/etc/nginx/includes/edge_function_token.conf:ro
+    restart: unless-stopped

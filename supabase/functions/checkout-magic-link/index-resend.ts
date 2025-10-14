@@ -21,8 +21,8 @@ const cors = (req: Request) => ({
 
 const html = (link: string) => `
   <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0f172a">
-    <h2>DORA Audit — sign in</h2>
-    <p>Click to sign in securely:</p>
+    <h2>DORA Audit — access</h2>
+    <p>Thanks for your purchase. Click to sign in:</p>
     <p style="margin:24px 0">
       <a href="${link}" style="background:#7c3aed;color:#fff;padding:12px 16px;border-radius:10px;text-decoration:none;display:inline-block">
         Open DORA Audit
@@ -51,15 +51,9 @@ Deno.serve(async (req) => {
 
   const supa = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
 
-  // weryfikacja whitelisty
-  const { data: allowed, error: allowErr } = await supa
-    .from('allowed_emails')
-    .select('email')
-    .eq('email', email)
-    .maybeSingle();
-
-  if (allowErr) return new Response(JSON.stringify({ error: `DB read: ${allowErr.message}` }), { status: 500, headers: cors(req) });
-  if (!allowed)  return new Response(JSON.stringify({ error: 'Email not allowed' }), { status: 403, headers: cors(req) });
+  // upsert do whitelisty
+  const { error: upsertErr } = await supa.from('allowed_emails').upsert({ email, source: 'checkout' }, { onConflict: 'email' });
+  if (upsertErr) return new Response(JSON.stringify({ error: `DB upsert: ${upsertErr.message}` }), { status: 500, headers: cors(req) });
 
   // generuj magic link
   const { data, error } = await supa.auth.admin.generateLink({
