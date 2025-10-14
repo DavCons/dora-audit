@@ -19,7 +19,12 @@
 
     <section class="card">
       <h2>1) Po zakupie — wyślij magic-link (dodaje do whitelisty)</h2>
-      <label for="email_checkout">Adres e-mail (kupujący)</label>
+      <input id="checkout-email" type="email" class="input" />
+      <button id="checkout-magic-link-btn"
+        onclick="callApi('checkout-magic-link','checkout-email')">
+        Wyślij magic-link (checkout)
+      </button>
+      <div id="checkout-magic-link-out" style="margin-top:8px;color:#aaa"></div><label for="email_checkout">Adres e-mail (kupujący)</label>
       <input id="email_checkout" type="email" placeholder="buyer@example.com" required>
       <button id="send_checkout">Wyślij magic-link (checkout)</button>
       <div id="msg_checkout" class="msg"></div>
@@ -29,10 +34,13 @@
     <section class="card">
       <h2>2) Logowanie — tylko dla dozwolonych adresów</h2>
       <label for="email_login">Adres e-mail</label>
-      <input id="email_login" type="email" placeholder="you@example.com" required>
-      <button id="send_login">Wyślij magic-link (login)</button>
-      <div id="msg_login" class="msg"></div>
-      <p class="muted">Dostęp do aplikacji mają tylko adresy z whitelisty.</p>
+      <input id="login-email" type="email" class="input" />
+      <button id="login-magic-link-btn"
+            onclick="callApi('login-magic-link','login-email')">
+            Wyślij magic-link (login)
+      </button>
+      <div id="login-magic-link-out" style="margin-top:8px;color:#aaa"></div>
+        <p class="muted">Dostęp do aplikacji mają tylko adresy z whitelisty.</p>
     </section>
 
     <p><a href="/index.html">Strona startowa</a></p>
@@ -40,5 +48,36 @@
 
   <script src="/assets/checkout.js" defer></script>
   <script src="/assets/login.js" defer></script>
+
+  <script>
+  async function callApi(endpointId, emailInputId) {
+    const btn   = document.getElementById(endpointId + "-btn");
+    const email = document.getElementById(emailInputId).value.trim();
+    const out   = document.getElementById(endpointId + "-out");
+
+    if (!email) { out.textContent = "Podaj adres e-mail."; return; }
+
+    btn.disabled = true; out.textContent = "Wysyłanie...";
+    try {
+      const res = await fetch("/api/" + endpointId, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email,
+          redirect_to: "http://51.21.152.197:8501"
+        })
+      });
+      const text = await res.text();
+      out.textContent = res.ok ? "OK — sprawdź skrzynkę ✉️"
+                               : `Błąd ${res.status}: ${text}`;
+    } catch (e) {
+      out.textContent = "Błąd sieci: " + (e?.message || e);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  </script>
+
+
 </body>
 </html>
