@@ -5,8 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DORA Audit — Zakup i dostęp</title>
   <link rel="stylesheet" href="/assets/common.css">
-  <link rel="preload" href="/assets/checkout.js" as="script">
-  <link rel="preload" href="/assets/login.js" as="script">
 </head>
 <body>
   <div class="wrap">
@@ -17,37 +15,40 @@
 
     <h1>DORA Audit — Zakup i dostęp</h1>
 
+    <!-- Sekcja 1: checkout (dodanie do whitelisty + wysyłka magic-link) -->
     <section class="card">
       <h2>1) Po zakupie — wyślij magic-link (dodaje do whitelisty)</h2>
-      <input id="checkout-email" type="email" class="input" />
+
+      <label for="checkout-email">Adres e-mail (kupujący)</label>
+      <input id="checkout-email" type="email" class="input" placeholder="buyer@example.com" />
+
       <button id="checkout-magic-link-btn"
         onclick="callApi('checkout-magic-link','checkout-email')">
         Wyślij magic-link (checkout)
       </button>
-      <div id="checkout-magic-link-out" style="margin-top:8px;color:#aaa"></div><label for="email_checkout">Adres e-mail (kupujący)</label>
-      <input id="email_checkout" type="email" placeholder="buyer@example.com" required>
-      <button id="send_checkout">Wyślij magic-link (checkout)</button>
-      <div id="msg_checkout" class="msg"></div>
+
+      <div id="checkout-magic-link-out" class="muted" style="margin-top:8px"></div>
       <p class="muted">Ten adres zostanie dopisany do whitelisty, a następnie wyślemy magic-link do logowania.</p>
     </section>
 
+    <!-- Sekcja 2: login (tylko dozwolone adresy) -->
     <section class="card">
       <h2>2) Logowanie — tylko dla dozwolonych adresów</h2>
-      <label for="email_login">Adres e-mail</label>
-      <input id="login-email" type="email" class="input" />
+
+      <label for="login-email">Adres e-mail</label>
+      <input id="login-email" type="email" class="input" placeholder="you@example.com" />
+
       <button id="login-magic-link-btn"
-            onclick="callApi('login-magic-link','login-email')">
-            Wyślij magic-link (login)
+        onclick="callApi('login-magic-link','login-email')">
+        Wyślij magic-link (login)
       </button>
-      <div id="login-magic-link-out" style="margin-top:8px;color:#aaa"></div>
-        <p class="muted">Dostęp do aplikacji mają tylko adresy z whitelisty.</p>
+
+      <div id="login-magic-link-out" class="muted" style="margin-top:8px"></div>
+      <p class="muted">Dostęp do aplikacji mają tylko adresy z whitelisty.</p>
     </section>
 
     <p><a href="/index.html">Strona startowa</a></p>
   </div>
-
-  <script src="/assets/checkout.js" defer></script>
-  <script src="/assets/login.js" defer></script>
 
   <script>
   async function callApi(endpointId, emailInputId) {
@@ -77,7 +78,5 @@
     }
   }
   </script>
-
-
 </body>
 </html>
