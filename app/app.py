@@ -556,25 +556,28 @@ def supa():
 def require_auth_magic_link() -> bool:
     client = supa()
 
-    # a) Obsługa powrotu z magic-linka: ?code=...
+    # --- 1) powrót z magic-linka: ?code=... (PKCE)
     qp = st.query_params if hasattr(st, "query_params") else st.experimental_get_query_params()
     code = None
     if isinstance(qp, dict):
         raw_code = qp.get("code")
         if isinstance(raw_code, list): code = raw_code[0]
         elif isinstance(raw_code, str): code = raw_code
-
     if code:
         with st.spinner("Signing you in…"):
             try:
                 data = client.auth.exchange_code_for_session({"auth_code": code})
                 session = getattr(data, "session", None) or (isinstance(data, dict) and data.get("session"))
-                access = getattr(session, "access_token", None) or (session and session.get("access_token"))
+                access  = getattr(session, "access_token", None) or (session and session.get("access_token"))
                 refresh = getattr(session, "refresh_token", None) or (session and session.get("refresh_token"))
-                if access and refresh:
-                    st.session_state["access_token"] = access
-                    st.session_state["refresh_token"] = refresh
-                    client.auth.set_session(access, refresh)
+                if access:
+                    try:
+                        # Prefer full session jeśli mamy oba
+                        client.auth.set_session(access, refresh)
+                    except Exception:
+                        client.auth.set_auth(access)
+                    st.session_state["access_token"]  = access
+                    if refresh: st.session_state["refresh_token"] = refresh
                     try: st.query_params.clear()
                     except Exception: st.experimental_set_query_params()
                     st.rerun()
@@ -584,29 +587,44 @@ def require_auth_magic_link() -> bool:
                 except Exception: st.experimental_set_query_params()
                 st.stop()
 
-    # b) Obsługa powrotu z #access_token / #refresh_token (zamienione na query w JS)
+    # --- 2) powrót z hash→query: ?access_token=&refresh_token=
     access = refresh = None
     if isinstance(qp, dict):
         ra, rr = qp.get("access_token"), qp.get("refresh_token")
         access  = ra[0] if isinstance(ra, list) else ra
         refresh = rr[0] if isinstance(rr, list) else rr
 
-    if access and refresh:
+    if access:
+        # akceptuj access_token nawet bez refresh_token
         try:
-            client.auth.set_session(access, refresh)
+            if refresh:
+                client.auth.set_session(access, refresh)
+            else:
+                # v2: jeżeli odmówi set_session(None) – fallback do set_auth()
+                try:
+                    client.auth.set_session(access, None)
+                except Exception:
+                    client.auth.set_auth(access)
             st.session_state["access_token"] = access
-            st.session_state["refresh_token"] = refresh
+            if refresh:
+                st.session_state["refresh_token"] = refresh
             try: st.query_params.clear()
             except Exception: st.experimental_set_query_params()
             st.rerun()
         except Exception:
-            pass
+            pass  # przejdź niżej do prób z pamięci
 
-    # c) Mamy zapamiętane tokeny?
+    # --- 3) zapamiętane tokeny?
     at, rt = st.session_state.get("access_token"), st.session_state.get("refresh_token")
-    if at and rt:
+    if at:
         try:
-            client.auth.set_session(at, rt)
+            if rt:
+                client.auth.set_session(at, rt)
+            else:
+                try:
+                    client.auth.set_session(at, None)
+                except Exception:
+                    client.auth.set_auth(at)
             u = client.auth.get_user()
             if u:
                 return True
@@ -614,7 +632,7 @@ def require_auth_magic_link() -> bool:
             st.session_state.pop("access_token", None)
             st.session_state.pop("refresh_token", None)
 
-    # d) Brak sesji — pokaż „kartę” z linkiem do strony logowania (z /site)
+    # --- 4) karta z linkiem do /site
     st.markdown(f"""
     <div style="background:#17171b;border:1px solid #26262b;border-radius:14px;padding:22px 18px;margin:18px 0">
       <h2 style="margin:0 0 12px 0">🔐 Logowanie wymagane</h2>
@@ -628,7 +646,6 @@ def require_auth_magic_link() -> bool:
       </p>
     </div>
     """, unsafe_allow_html=True)
-
     return False
 
 
