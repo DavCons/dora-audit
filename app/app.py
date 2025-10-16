@@ -41,43 +41,6 @@ def _clear_query_params():
     except Exception:
         st.experimental_set_query_params()
 
-def _promote_hash_to_query_once():
-    """
-    Jeśli tokeny przyszły w fragmencie URL (po '#'), przepisz je do query string
-    i odśwież stronę. Wykonuje się tylko raz (flaga from_hash=1).
-    """
-    components.html(
-        """
-        <script>
-        (function () {
-          try {
-            var hash = window.location.hash || "";
-            if (!hash || hash.indexOf("access_token=") === -1) return;
-
-            // Parametry z #... -> URLSearchParams
-            var hp = new URLSearchParams(hash.substring(1));
-            if (hp.get("from_hash") === "1") return;  // unikamy pętli
-
-            hp.set("from_hash", "1");
-
-            // Dołącz do istniejących ?...
-            var qp = new URLSearchParams(window.location.search);
-            hp.forEach((v, k) => qp.set(k, v));
-
-            var newUrl = window.location.pathname + "?" + qp.toString();
-            // Nadpisz URL bez # i bez przeładowania historii
-            window.history.replaceState({}, "", newUrl);
-            // Jednorazowe odświeżenie, aby backend zobaczył ?...
-            window.location.reload();
-          } catch (e) {
-            console.error("hash→query fail", e);
-          }
-        })();
-        </script>
-        """,
-        height=0
-    )
-
 # ========= Autoryzacja: magic-link / code / tokens =========
 def require_auth_magic_link() -> bool:
     """
@@ -85,7 +48,6 @@ def require_auth_magic_link() -> bool:
     w przeciwnym razie renderuje kartę z linkiem do /site i zwraca False.
     """
     client = supa()
-    _promote_hash_to_query_once()
 
     qp = _get_query_params_dict()
 
