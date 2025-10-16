@@ -1,5 +1,8 @@
 
+import os
 import streamlit as st
+from supabase import create_client
+from supabase.client import Client  # ✅ DODAJ TO
 import pandas as pd
 # ADD: imports for admin/user panels
 from io import BytesIO
