@@ -157,6 +157,42 @@ def answers_payload_update_hook(qid, question_text, value, section=None, ref=Non
 
 st.set_page_config(page_title="DORA Compliance - MVP", layout="wide")
 
+# === SITE THEME: spójny wygląd z /site ===
+SITE_CSS = """
+/* reset + ciemny motyw jak w /site */
+:root {
+  --bg: #0e0e10; --panel: #17171b; --muted: #a7a7ad; --text: #e5e7eb; --primary: #7c3aed;
+  --radius: 14px;
+}
+html, body { background: var(--bg); }
+section.main > div { padding-top: 12px; }
+.block-container { max-width: 980px; padding: 24px 16px; }
+.stMarkdown, .stText, .stCaption, .stExpander, .stDownloadButton { color: var(--text); }
+h1, h2, h3, h4 { color: var(--text); letter-spacing: .2px; }
+hr { border-color: #26262b; }
+.stExpander { border: 1px solid #26262b; border-radius: var(--radius); background: transparent; }
+
+.stTextInput > div > div > input,
+.stTextArea textarea,
+[data-baseweb="select"] > div {
+  background: var(--panel) !important; color: var(--text) !important;
+  border: 1px solid #26262b !important; border-radius: var(--radius) !important;
+}
+
+.stButton>button {
+  background: var(--primary) !important; color: white !important; border: 0 !important;
+  border-radius: 12px !important; padding: 10px 16px !important; font-weight: 600;
+}
+.stButton>button:hover { filter: brightness(1.05); }
+
+.st-emotion-cache-ue6h4q { color: var(--muted) !important; }   /* helper dla captionów */
+.stAlert { background: #141419; border: 1px solid #26262b; border-radius: var(--radius); }
+"""
+
+def apply_site_theme():
+    st.markdown(f"<style>{SITE_CSS}</style>", unsafe_allow_html=True)
+
+apply_site_theme()
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -204,172 +240,79 @@ def supa():
     return _supabase
 
 def require_auth_magic_link() -> bool:
-    """
-    Returns True if user is authenticated (session present), else renders login UI and returns False.
-    Flow:
-      1) User enters email -> we call supabase.auth.sign_in_with_otp to send a magic link.
-      2) Supabase redirects back to APP_BASE_URL with ?code=... -> we exchange code for a session.
-    """
-    sb = supa()
-    if sb is None:
-        return True  # let app work without auth if not configured
+    client = supa()
 
-    # 1) If we came back from Supabase with ?code=..., exchange it for a session
-    try:
-        q = st.query_params if hasattr(st, "query_params") else st.experimental_get_query_params()
-        code_param = None
-        if isinstance(q, dict):
-            if hasattr(q, "get"):
-                v = q.get("code")
-                if isinstance(v, list):
-                    code_param = v[0] if v else None
-                elif isinstance(v, str):
-                    code_param = v
-        if code_param:
+    # a) Obsługa powrotu z magic-linka: ?code=...
+    qp = st.query_params if hasattr(st, "query_params") else st.experimental_get_query_params()
+    code = None
+    if isinstance(qp, dict):
+        raw_code = qp.get("code")
+        if isinstance(raw_code, list): code = raw_code[0]
+        elif isinstance(raw_code, str): code = raw_code
+
+    if code:
+        with st.spinner("Signing you in…"):
             try:
-                sb.auth.exchange_code_for_session(code_param)
-                st.session_state["auth_ok"] = True
-                try:
-                    u = sb.auth.get_user().user
-                    st.session_state["auth_user"] = (u.email if u else None) or "user"
-                except Exception:
-                    st.session_state["auth_user"] = "user"
-                st.markdown("""
-                <script>
-                  (function(){
-                    var clean = window.location.pathname;
-                    window.history.replaceState({}, "", clean);
-                  })();
-                </script>
-                """, unsafe_allow_html=True)
-                return True
-            except Exception as e:
-                st.error("Auth exchange failed. The link may be expired or misconfigured.")
-    except Exception:
-        pass
+                data = client.auth.exchange_code_for_session({"auth_code": code})
+                session = getattr(data, "session", None) or (isinstance(data, dict) and data.get("session"))
+                access = getattr(session, "access_token", None) or (session and session.get("access_token"))
+                refresh = getattr(session, "refresh_token", None) or (session and session.get("refresh_token"))
+                if access and refresh:
+                    st.session_state["access_token"] = access
+                    st.session_state["refresh_token"] = refresh
+                    client.auth.set_session(access, refresh)
+                    try: st.query_params.clear()
+                    except Exception: st.experimental_set_query_params()
+                    st.rerun()
+            except Exception:
+                st.error("Nie udało się wymienić code → session.")
+                try: st.query_params.clear()
+                except Exception: st.experimental_set_query_params()
+                st.stop()
 
-    # 1b) Handle ?access_token=...&refresh_token=... (z hasha przeniesione do query przez JS)
-    try:
-        qp = st.query_params if hasattr(st, "query_params") else st.experimental_get_query_params()
-        def _first(v):
-            return v[0] if isinstance(v, list) and v else (v if isinstance(v, str) else None)
-        at = _first(qp.get("access_token"))
-        rt = _first(qp.get("refresh_token"))
-        if at and rt:
-            try:
-                sb.auth.set_session(at, rt)  # <- kluczowe!
-                st.session_state["auth_ok"] = True
-                try:
-                    u = sb.auth.get_user().user
-                    st.session_state["auth_user"] = (u.email if u else None) or "user"
-                except Exception:
-                    st.session_state["auth_user"] = "user"
-                # Wyczyść URL z tokenów, żeby nie zostawały w pasku
-                st.markdown("""
-                <script>
-                  (function(){
-                    var clean = window.location.pathname;
-                    window.history.replaceState({}, "", clean);
-                  })();
-                </script>
-                """, unsafe_allow_html=True)
-                return True
-            except Exception as e:
-                # tokeny mogły być już unieważnione (np. po wylogowaniu) – wyczyść URL i pokaż łagodny komunikat
-                st.components.v1.html("""
-                <script>
-                  (function(){
-                    var clean = parent.location.pathname;
-                    parent.history.replaceState({}, "", clean);
-                  })();
-                </script>
-                """, height=0)
-                st.info("Sesja została zakończona.")
-    except Exception:
-        pass
+    # b) Obsługa powrotu z #access_token / #refresh_token (zamienione na query w JS)
+    access = refresh = None
+    if isinstance(qp, dict):
+        ra, rr = qp.get("access_token"), qp.get("refresh_token")
+        access  = ra[0] if isinstance(ra, list) else ra
+        refresh = rr[0] if isinstance(rr, list) else rr
 
-    # 2) If we have an active session, we're good
-    try:
-        sess = sb.auth.get_session()
-        if sess and getattr(sess, "access_token", None):
-            st.session_state["auth_ok"] = True
-            st.session_state["auth_user"] = getattr(getattr(sess, "user", None), "email", None) or "user"
-    except Exception:
-        # Some client versions return dict-like
+    if access and refresh:
         try:
-            sess = sb.auth.get_session()
-            if isinstance(sess, dict) and sess.get("access_token"):
-                st.session_state["auth_ok"] = True
-                st.session_state["auth_user"] = (sess.get("user") or {}).get("email") or "user"
+            client.auth.set_session(access, refresh)
+            st.session_state["access_token"] = access
+            st.session_state["refresh_token"] = refresh
+            try: st.query_params.clear()
+            except Exception: st.experimental_set_query_params()
+            st.rerun()
         except Exception:
             pass
 
-    if st.session_state.get("auth_ok"):
-        return True
+    # c) Mamy zapamiętane tokeny?
+    at, rt = st.session_state.get("access_token"), st.session_state.get("refresh_token")
+    if at and rt:
+        try:
+            client.auth.set_session(at, rt)
+            u = client.auth.get_user()
+            if u:
+                return True
+        except Exception:
+            st.session_state.pop("access_token", None)
+            st.session_state.pop("refresh_token", None)
 
-    # 3) Render email form to send magic link
-    st.title("🔐 Sign in — Magic link")
-    with st.form("magic_link"):
-        email = st.text_input("Your email", value="", autocomplete="email")
-        submitted = st.form_submit_button("Send magic link")
-        if submitted:
-            if not email:
-                st.error("Enter your email.")
-            else:
-                try:
-                    # Try both call signatures (lib versions differ)
-                    try:
-                        sb.auth.sign_in_with_otp({"email": email, "options": {"email_redirect_to": APP_BASE_URL or None}})
-                    except Exception:
-                        sb.auth.sign_in_with_otp(email=email)
-                    st.success("Magic link sent! Check your inbox and click the link to come back here.")
-                except Exception as e:
-                    st.error("Failed to send magic link. Verify SUPABASE_URL/KEY and allowed redirects in Supabase.")
-    with st.expander("ℹ️ Configuration tips"):
-        st.markdown("""
-**Required env vars** (Docker/Compose):
-- `SUPABASE_URL` — your project URL (https://xxxx.supabase.co)
-- `SUPABASE_ANON_KEY` — anon public key
-- `APP_BASE_URL` — the URL users will hit (must be in Supabase Auth redirect allow-list)
-
-**In Supabase Dashboard → Auth → URL Configuration:**
-- Set **Site URL** to your `APP_BASE_URL` (e.g., `https://your.domain` or `http://<EC2-IP>:8501`)
-- Add `APP_BASE_URL` to **Redirect URLs**.
-
-Then click "Send magic link" — after email click, you return here with `?code=...`.
-""")
+    # d) Brak sesji — pokaż „kartę” z linkiem do strony logowania (z /site)
+    st.markdown("""
+    <div style="background:#17171b;border:1px solid #26262b;border-radius:14px;padding:22px 18px;margin:18px 0">
+      <h2 style="margin:0 0 12px 0">🔐 Logowanie wymagane</h2>
+      <p style="color:#a7a7ad;margin:0 0 10px 0">
+        Użyj przycisku na stronie Checkout & FAQ, aby wysłać sobie magic-link.
+      </p>
+      <p style="margin:0">
+        <a href="/DORA_Checkout_and_FAQ.html" style="color:#9b8cf0;text-decoration:none">➡️ Przejdź do: Checkout & FAQ</a>
+      </p>
+    </div>
+    """, unsafe_allow_html=True)
     return False
-
-# ======== ENFORCE WHITELIST (allowed_emails) ========
-
-def _enforce_allowed_email(sb):
-    """
-    Po udanym logowaniu (magic-link) sprawdza,
-    czy e-mail użytkownika znajduje się w tabeli allowed_emails.
-    Jeśli nie — blokuje dostęp do aplikacji.
-    """
-    try:
-        user = sb.auth.get_user().user
-        email = getattr(user, "email", None) if user else None
-    except Exception:
-        email = None
-
-    if not email:
-        st.error("Nie udało się odczytać adresu e-mail z sesji.")
-        st.stop()
-
-    try:
-        # Zapytanie do tabeli public.allowed_emails w Supabase
-        data = sb.table("allowed_emails").select("email").eq("email", email).limit(1).execute()
-
-        # Obsługa w zależności od wersji supabase-py
-        rows = getattr(data, "data", None) if hasattr(data, "data") else data.get("data", [])
-        if not rows:
-            st.error("❌ Dostęp zabroniony. Ten adres e-mail nie ma uprawnień do aplikacji.")
-            st.stop()
-    except Exception as e:
-        st.error(f"⚠️ Błąd weryfikacji uprawnień: {e}")
-        st.stop()
 
 
 if not require_auth_magic_link():
@@ -377,6 +320,8 @@ if not require_auth_magic_link():
 
 # Po pomyślnym logowaniu — sprawdź uprawnienia
 _enforce_allowed_email(supa())
+
+st.title("DORA Audit — MVP")
 
 # ======== SESSION BAR (Supabase) ========
 from datetime import datetime, timezone

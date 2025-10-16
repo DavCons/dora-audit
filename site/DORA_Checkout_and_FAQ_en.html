@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>DORA Audit — Purchase & Access</title>
   <link rel="stylesheet" href="/assets/common.css">
+  <script src="/assets/checkout_login.js" defer></script>
 </head>
 <body>
   <div class="wrap">
@@ -15,68 +16,31 @@
 
     <h1>DORA Audit — Purchase & Access</h1>
 
-    <!-- Section 1: checkout (whitelist + magic link) -->
     <section class="card">
       <h2>1) After purchase — send a magic link (adds to whitelist)</h2>
 
-      <label for="checkout-email">Buyer’s email</label>
-      <input id="checkout-email" type="email" class="input" placeholder="buyer@example.com" />
+      <label for="checkout-email-en">Buyer’s email</label>
+      <input id="checkout-email-en" type="email" class="input" placeholder="buyer@example.com" />
 
-      <button id="checkout-magic-link-btn"
-              onclick="callApi('checkout-magic-link','checkout-email')">
-        Send magic link (checkout)
-      </button>
+      <button id="checkout-magic-link-btn-en" data-lang="en">Send magic link (checkout)</button>
+      <div id="checkout-magic-link-out-en" class="muted" style="margin-top:8px"></div>
 
-      <div id="checkout-magic-link-out" class="muted" style="margin-top:8px"></div>
       <p class="muted">We will add this address to the whitelist and then send a magic link to sign in.</p>
     </section>
 
-    <!-- Section 2: login (whitelisted emails only) -->
     <section class="card">
       <h2>2) Sign in — whitelisted emails only</h2>
 
-      <label for="login-email">Your email</label>
-      <input id="login-email" type="email" class="input" placeholder="you@example.com" />
+      <label for="login-email-en">Your email</label>
+      <input id="login-email-en" type="email" class="input" placeholder="you@example.com" />
 
-      <button id="login-magic-link-btn"
-              onclick="callApi('login-magic-link','login-email')">
-        Send magic link (login)
-      </button>
+      <button id="login-magic-link-btn-en" data-lang="en">Send magic link (login)</button>
+      <div id="login-magic-link-out-en" class="muted" style="margin-top:8px"></div>
 
-      <div id="login-magic-link-out" class="muted" style="margin-top:8px"></div>
       <p class="muted">Only emails present on the whitelist can access the app.</p>
     </section>
 
     <p><a href="/index_en.html">Home</a></p>
   </div>
-
-  <script>
-  async function callApi(endpointId, emailInputId) {
-    const btn   = document.getElementById(endpointId + "-btn");
-    const email = document.getElementById(emailInputId).value.trim();
-    const out   = document.getElementById(endpointId + "-out");
-
-    if (!email) { out.textContent = "Please enter your email."; return; }
-
-    btn.disabled = true; out.textContent = "Sending…";
-    try {
-      const res = await fetch("/api/" + endpointId, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email,
-          redirect_to: "http://51.21.152.197:8501"
-        })
-      });
-      const text = await res.text();
-      out.textContent = res.ok ? "OK — check your inbox ✉️"
-                               : `Error ${res.status}: ${text}`;
-    } catch (e) {
-      out.textContent = "Network error: " + (e?.message || e);
-    } finally {
-      btn.disabled = false;
-    }
-  }
-  </script>
 </body>
 </html>
