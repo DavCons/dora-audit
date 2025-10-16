@@ -203,7 +203,9 @@ components.html("""
 (function () {
   try {
     var h = parent.location.hash || "";
-    if (h && h.indexOf('access_token=') !== -1) {
+    var hasAuth = h.indexOf('access_token=') !== -1 || h.indexOf('refresh_token=') !== -1 || h.indexOf('code=') !== -1;
+    if (hasAuth) {
+      var s = document.createElement('style'); s.innerHTML='body{visibility:hidden}'; document.head.appendChild(s);
       var params = new URLSearchParams(h.substring(1)); // obetnij '#'
       var newUrl = parent.location.pathname + "?" + params.toString();
       parent.history.replaceState({}, "", newUrl);
@@ -219,7 +221,6 @@ components.html("""
 if "answers_payload" not in st.session_state:
     st.session_state["answers_payload"] = {}
 
-st.title("DORA Audit — MVP")
 
 import os
 from supabase import create_client
