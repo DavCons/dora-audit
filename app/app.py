@@ -1,6 +1,8 @@
 
 import streamlit as st
 import pandas as pd
+# ADD: imports for admin/user panels
+from io import BytesIO
 from datetime import datetime
 
 # --- Supabase persistence helpers ---
@@ -152,7 +154,56 @@ def answers_payload_update_hook(qid, question_text, value, section=None, ref=Non
     except Exception:
         pass
 
+# ADD: DB helpers
 
+def is_admin(client: Client, email: str) -> bool:
+    try:
+        res = client.table("user_roles").select("is_admin").eq("email", email).maybe_single().execute()
+        row = getattr(res, "data", None) or (isinstance(res, dict) and res.get("data"))
+        return bool(row and row.get("is_admin"))
+    except Exception:
+        return False
+
+def list_questionnaires(client: Client):
+    res = client.table("questionnaires").select("*").order("created_at", desc=True).execute()
+    return getattr(res, "data", []) or []
+
+def upsert_questionnaire(client: Client, title: str, file_path: str | None,
+                         green: float, amber: float, created_by: str):
+    payload = {
+        "title": title.strip(),
+        "file_path": file_path,
+        "green_threshold": float(green),
+        "amber_threshold": float(amber),
+        "created_by": created_by
+    }
+    return client.table("questionnaires").insert(payload).execute()
+
+def upload_questionnaire_file(client: Client, file_name: str, data: bytes) -> str:
+    # zapis do Storage (bucket: questionnaires)
+    # unikalna ścieżka: YYYY/MM/DD/HHMMSS_filename
+    now = datetime.utcnow().strftime("%Y/%m/%d/%H%M%S")
+    path = f"{now}_{file_name}"
+    client.storage.from_("questionnaires").upload(path, data, {"contentType": "application/octet-stream", "upsert": True})
+    return path
+
+def my_instances(client: Client, email: str):
+    res = client.table("survey_instances") \
+        .select("id, questionnaire_id, status, progress, updated_at, created_at") \
+        .eq("email", email).order("updated_at", desc=True).execute()
+    return getattr(res, "data", []) or []
+
+def start_new_instance(client: Client, q_id: str, email: str):
+    payload = {"questionnaire_id": q_id, "email": email, "status": "in_progress", "progress": 0, "answers": {}}
+    return client.table("survey_instances").insert(payload).execute()
+
+def update_progress(client: Client, instance_id: str, progress: int, answers: dict | None = None, status: str | None = None):
+    payload = {"progress": int(progress), "updated_at": datetime.utcnow().isoformat()}
+    if answers is not None:
+        payload["answers"] = answers
+    if status:
+        payload["status"] = status
+    return client.table("survey_instances").update(payload).eq("id", instance_id).execute()
 
 
 st.set_page_config(page_title="DORA Compliance - MVP", layout="wide")
@@ -321,6 +372,20 @@ if not require_auth_magic_link():
 
 # Po pomyślnym logowaniu — sprawdź uprawnienia
 _enforce_allowed_email(supa())
+
+email = _get_current_user_email(supa()) or ""
+admin = is_admin(supa(), email)
+
+# tytuł po zalogowaniu
+st.title("DORA Audit — MVP")
+
+# nawigacja (sidebar)
+page = st.sidebar.radio("Nawigacja", ["Moje ankiety"] + (["Panel administracyjny"] if admin else []))
+
+if page == "Panel administracyjny":
+    render_admin_panel(supa(), email)
+else:
+    render_user_panel(supa(), email)
 
 st.title("DORA Audit — MVP")
 
@@ -499,6 +564,118 @@ def session_bar():
 # Wywołanie paska sesji
 session_bar()
 # ======== END SESSION BAR ========
+
+# ADD: Admin panel
+def render_admin_panel(client: Client, admin_email: str):
+    st.subheader("Panel administracyjny")
+
+    with st.expander("➕ Dodaj ankietę", expanded=True):
+        title = st.text_input("Tytuł ankiety", placeholder="Nazwa ankiety")
+        colA, colB, colC = st.columns(3)
+        with colA:
+            green = st.number_input("Próg GREEN (%)", min_value=0.0, max_value=100.0, value=80.0, step=1.0)
+        with colB:
+            amber = st.number_input("Próg AMBER (%)", min_value=0.0, max_value=100.0, value=60.0, step=1.0)
+        with colC:
+            st.caption("RED = poniżej AMBER (automatycznie)")
+
+        file = st.file_uploader("Plik ankiety (np. XLSX/CSV/JSON)", type=["xlsx","csv","json"], accept_multiple_files=False)
+        if st.button("Zapisz ankietę"):
+            if not title.strip():
+                st.error("Podaj tytuł.")
+            else:
+                file_path = None
+                if file is not None:
+                    data = file.read()
+                    try:
+                        file_path = upload_questionnaire_file(client, file.name, data)
+                    except Exception as e:
+                        st.error(f"Upload nieudany: {e}")
+                        return
+                try:
+                    upsert_questionnaire(client, title, file_path, green, amber, admin_email)
+                    st.success("Ankieta zapisana.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Błąd zapisu ankiety: {e}")
+
+    st.markdown("### 📋 Lista ankiet")
+    items = list_questionnaires(client)
+    if not items:
+        st.info("Brak ankiet.")
+    else:
+        for q in items:
+            with st.container(border=True):
+                st.markdown(f"**{q['title']}**  \nGREEN ≥ {q.get('green_threshold',0)}%  •  AMBER ≥ {q.get('amber_threshold',0)}%")
+                if q.get("file_path"):
+                    st.caption(f"Plik: `{q['file_path']}`")
+
+# ADD: User panel
+def render_user_panel(client: Client, email: str):
+    st.subheader("Moje ankiety")
+
+    # start od nowa (z dostępnych definicji)
+    defs = list_questionnaires(client)
+    if defs:
+        with st.expander("➕ Rozpocznij nową ankietę", expanded=True):
+            options = {f"{d['title']} (GREEN {d.get('green_threshold',0)}% / AMBER {d.get('amber_threshold',0)}%)": d['id'] for d in defs}
+            pick = st.selectbox("Wybierz ankietę", list(options.keys()))
+            if st.button("Zacznij nową"):
+                try:
+                    start_new_instance(client, options[pick], email)
+                    st.success("Utworzono nową instancję ankiety.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Nie udało się utworzyć ankiety: {e}")
+    else:
+        st.info("Administrator nie dodał jeszcze żadnych ankiet.")
+
+    st.markdown("### 🔄 Kontynuuj / podgląd")
+    rows = my_instances(client, email)
+    if not rows:
+        st.caption("Brak rozpoczętych ankiet.")
+        return
+
+    for r in rows:
+        pid = r["id"]
+        prog = r.get("progress", 0)
+        status = r.get("status", "in_progress")
+        cols = st.columns([5,2,2,3])
+        with cols[0]:
+            st.markdown(f"**Instancja:** `{pid[:8]}…`  \nStatus: `{status}`")
+        with cols[1]:
+            st.progress(int(prog)/100.0, text=f"{prog}%")
+        with cols[2]:
+            if st.button("Kontynuuj", key=f"cont_{pid}"):
+                st.session_state["current_instance_id"] = pid
+                st.session_state["current_progress"] = prog
+                st.success("Załadowano ankietę do kontynuacji (tu umieść render formularza).")
+        with cols[3]:
+            if st.button("Od nowa", key=f"restart_{pid}"):
+                # tworzymy nową instancję na tej samej definicji
+                try:
+                    start_new_instance(client, r["questionnaire_id"], email)
+                    st.success("Utworzono nową, pustą instancję.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Nie udało się: {e}")
+
+    # Placeholder: jeżeli chcesz pokazać formularz dla wybranej instancji
+    cur = st.session_state.get("current_instance_id")
+    if cur:
+        st.markdown("---")
+        st.markdown(f"#### Wypełnianie ankiety: `{cur[:8]}…`")
+        # TODO: tutaj render Twoich pytań wg pliku/definicji (po sparsowaniu file_path).
+        # Na razie dajmy suwak postępu „na sucho”:
+        new_prog = st.slider("Postęp (%)", 0, 100, int(st.session_state.get("current_progress", 0)), 5)
+        if st.button("Zapisz postęp"):
+            try:
+                update_progress(client, cur, new_prog, answers=None, status="completed" if new_prog==100 else "in_progress")
+                st.session_state["current_progress"] = new_prog
+                st.success("Zapisano.")
+            except Exception as e:
+                st.error(f"Błąd zapisu: {e}")
+
 
 with st.sidebar:
     st.header("Ustawienia")

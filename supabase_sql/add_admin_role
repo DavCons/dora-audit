@@ -1,0 +1,41 @@
+-- ROLE / ADMIN
+create table if not exists public.user_roles (
+  email text primary key,
+  is_admin boolean not null default false,
+  created_at timestamptz default now()
+);
+
+-- ANKIETY (definicje)
+create table if not exists public.questionnaires (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  file_path text, -- ścieżka w Supabase Storage (bucket: questionnaires)
+  green_threshold numeric(5,2) default 80, -- %
+  amber_threshold numeric(5,2) default 60, -- %
+  created_by text not null,
+  created_at timestamptz default now()
+);
+
+-- INSTANCJE ANKIET UŻYTKOWNIKÓW
+create type public.survey_status as enum ('in_progress','completed');
+
+create table if not exists public.survey_instances (
+  id uuid primary key default gen_random_uuid(),
+  questionnaire_id uuid not null references public.questionnaires(id) on delete cascade,
+  email text not null,
+  status public.survey_status not null default 'in_progress',
+  progress int not null default 0,        -- 0..100
+  answers jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists survey_instances_email_idx on public.survey_instances(email);
+create index if not exists survey_instances_q_idx on public.survey_instances(questionnaire_id);
+
+-- (MVP) RLS wyłączone na tych stołach – włączymy później z politykami „owner-only”.
+alter table public.user_roles       disable row level security;
+alter table public.questionnaires   disable row level security;
+alter table public.survey_instances disable row level security;
+
+
