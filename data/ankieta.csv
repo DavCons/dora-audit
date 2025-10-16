@@ -1,0 +1,8 @@
+section,code,title,type,options,weight,required,help,min,max
+Governance,Q01,Do you have a DORA program owner?,yesno,,1,true,Owner formally appointed?,
+ICT,Q02,Critical assets inventoried?,single,No=0 | Partially=0.5 | Yes=1,1,true,,
+ICT,Q03,Controls implemented, multi,"Identity=1 | Backup=1 | Monitoring=1 | DR=1",2,false,Select all that apply,
+Risk,Q04,Maturity score (1-5),scale,,1,true,,1,5
+Docs,Q05,Upload policy URL,text,,0.5,false,Link to PDF,,
+KPI,Q06,Incidents per quarter,number,,1,false,,0,100
+

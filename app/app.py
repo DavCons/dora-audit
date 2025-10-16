@@ -8,6 +8,8 @@ import pandas as pd
 from io import BytesIO
 from datetime import datetime
 
+SITE_BASE_URL = os.getenv("SITE_BASE_URL", "http://51.21.152.197:8080")
+
 # --- Supabase persistence helpers ---
 from datetime import datetime
 def _safe_get_user_identity(client):
@@ -208,6 +210,263 @@ def update_progress(client: Client, instance_id: str, progress: int, answers: di
         payload["status"] = status
     return client.table("survey_instances").update(payload).eq("id", instance_id).execute()
 
+# === PARSER ANKIETY ===
+
+def storage_download_bytes(client: Client, bucket: str, path: str) -> bytes:
+    """Pobierz plik z Supabase Storage jako bytes."""
+    res = client.storage.from_(bucket).download(path)
+    # supabase-py może zwrócić bytes albo obiekt z 'data'
+    if isinstance(res, (bytes, bytearray)):
+        return bytes(res)
+    if isinstance(res, dict) and "data" in res and isinstance(res["data"], (bytes, bytearray)):
+        return bytes(res["data"])
+    # niektóre wersje mają atrybut .data
+    data = getattr(res, "data", None)
+    if isinstance(data, (bytes, bytearray)):
+        return bytes(data)
+    raise RuntimeError("Nie udało się pobrać pliku ze Storage.")
+
+def _coerce_bool(v, default=True):
+    if v is None: return default
+    s = str(v).strip().lower()
+    return s in ("1","true","t","yes","y")
+
+def _parse_options(s: str | None):
+    """Parsuje 'Label=1 | X=0.5' → [(label, weight), ...]."""
+    if not s or not str(s).strip():
+        return []
+    parts = [p.strip() for p in str(s).split("|")]
+    out = []
+    for p in parts:
+        if "=" in p:
+            lab, w = p.split("=", 1)
+            try:
+                out.append((lab.strip(), float(w.strip())))
+            except Exception:
+                out.append((lab.strip(), 1.0))
+        else:
+            out.append((p.strip(), 1.0))
+    return out
+
+def parse_questionnaire_df(df: pd.DataFrame):
+    """Zwraca listę sekcji: [{"name": str, "questions": [q,...]}] z polami w q."""
+    # normalizacja kolumn
+    cols = {c.lower().strip(): c for c in df.columns}
+    require = lambda k: cols.get(k, k)
+    get = lambda row, key, default=None: row.get(require(key), default)
+
+    records = []
+    for _, row in df.rename(columns=lambda c: c.lower().strip()).iterrows():
+        qtype = str(get(row, "type", "yesno")).strip().lower()
+        rec = {
+            "section":  str(get(row, "section", "General")).strip(),
+            "code":     str(get(row, "code", "")).strip() or f"Q{len(records)+1:03d}",
+            "title":    str(get(row, "title", "")).strip(),
+            "type":     qtype,
+            "options":  _parse_options(get(row, "options")),
+            "weight":   float(get(row, "weight", 1) or 1),
+            "required": _coerce_bool(get(row, "required", True), default=True),
+            "help":     str(get(row, "help", "") or "").strip(),
+            "min":      None if pd.isna(get(row, "min", None)) else float(get(row, "min")),
+            "max":      None if pd.isna(get(row, "max", None)) else float(get(row, "max")),
+        }
+        records.append(rec)
+
+    # grupowanie w sekcje
+    sections = {}
+    for q in records:
+        sections.setdefault(q["section"], []).append(q)
+    return [{"name": name, "questions": qs} for name, qs in sections.items()]
+
+def load_questionnaire_from_storage(client: Client, file_path: str):
+    """Wczytuje plik z bucketu 'questionnaires' i zwraca sekcje + pytania."""
+    data = storage_download_bytes(client, "questionnaires", file_path)
+    name = file_path.lower()
+    if name.endswith(".xlsx") or name.endswith(".xls"):
+        df = pd.read_excel(BytesIO(data))
+    elif name.endswith(".csv"):
+        df = pd.read_csv(BytesIO(data))
+    elif name.endswith(".json"):
+        # JSON: tablica obiektów (keys jak w CSV)
+        df = pd.json_normalize(pd.read_json(BytesIO(data)))
+    else:
+        raise ValueError("Nieobsługiwane rozszerzenie (dozwolone: .xlsx, .csv, .json)")
+    return parse_questionnaire_df(df)
+
+# === SCORING ===
+
+def _score_yesno(value, weight):
+    # True/Yes → 1, reszta 0
+    v = 1.0 if (str(value).lower() in ("1","true","t","yes","y")) else 0.0
+    return v * weight, weight
+
+def _score_single(value, options, weight):
+    if value is None or value == "": return 0.0, weight
+    # znajdź wagę opcji
+    d = dict(options) if options else {}
+    w = d.get(value, 1.0)
+    return float(w) * weight, weight
+
+def _score_multi(values, options, weight):
+    if not values: return 0.0, weight
+    d = dict(options) if options else {}
+    if d:
+        s = sum(d.get(v, 0.0) for v in values)
+        # normalizacja do [0,1] przy opcji z max sumą? tutaj zostawiamy "sumę wprost"
+        # aby uniknąć przekroczeń, przyjmijmy max = suma wag
+        max_sum = sum(d.values()) or 1.0
+        ratio = min(1.0, s / max_sum)
+        return ratio * weight, weight
+    # bez wag: 1/N każda
+    ratio = min(1.0, len(values) / max(1, len(values)))
+    return ratio * weight, weight
+
+def _score_scale(value, qmin, qmax, weight):
+    if value is None or qmin is None or qmax is None: return 0.0, weight
+    try:
+        v = float(value)
+        if qmax == qmin: return 0.0, weight
+        ratio = (v - qmin) / (qmax - qmin)
+        ratio = max(0.0, min(1.0, ratio))
+        return ratio * weight, weight
+    except Exception:
+        return 0.0, weight
+
+def _score_number(value, qmin, qmax, weight):
+    # jak scale – normalizacja
+    return _score_scale(value, qmin, qmax, weight)
+
+def compute_result(sections, answers: dict, green=80.0, amber=60.0):
+    """Zwraca: dict(score_pct, color, required_total, required_answered, progress_pct)."""
+    total_w = 0.0
+    got_w = 0.0
+    required_total = 0
+    required_answered = 0
+
+    for sec in sections:
+        for q in sec["questions"]:
+            wt = float(q.get("weight", 1) or 1)
+            total_w += wt
+            code = q["code"]
+            qtype = q["type"]
+            val = answers.get(code)
+            if q.get("required", True):
+                required_total += 1
+                if val not in (None, "", []):  # prosta heurystyka
+                    required_answered += 1
+
+            if qtype == "yesno":
+                s, w = _score_yesno(val, wt)
+            elif qtype == "single":
+                s, w = _score_single(val, q.get("options"), wt)
+            elif qtype == "multi":
+                s, w = _score_multi(val, q.get("options"), wt)
+            elif qtype == "scale":
+                s, w = _score_scale(val, q.get("min"), q.get("max"), wt)
+            elif qtype == "number":
+                s, w = _score_number(val, q.get("min"), q.get("max"), wt)
+            else:  # text / inne nie wpływają na wynik
+                s, w = 0.0, 0.0
+                total_w -= wt  # nie licz do denominatora
+            got_w += s
+
+    score_pct = 0.0 if total_w <= 0 else (got_w / total_w) * 100.0
+    progress_pct = 0.0 if required_total <= 0 else (required_answered / required_total) * 100.0
+
+    color = "green" if score_pct >= green else ("amber" if score_pct >= amber else "red")
+    return {
+        "score_pct": round(score_pct, 1),
+        "color": color,
+        "required_total": required_total,
+        "required_answered": required_answered,
+        "progress_pct": int(round(progress_pct)),
+    }
+
+# === RENDERER INSTANCJI ===
+
+def render_instance_form(client: Client, instance_row: dict, qdef_row: dict):
+    """Pełny formularz dla danej instancji + zapis postępu i wyniku."""
+    # 1) wczytaj definicję pytań
+    sections = []
+    if qdef_row.get("file_path"):
+        try:
+            sections = load_questionnaire_from_storage(client, qdef_row["file_path"])
+        except Exception as e:
+            st.error(f"Nie udało się wczytać ankiety: {e}")
+            return
+
+    answers = instance_row.get("answers") or {}
+    if isinstance(answers, str):
+        try: answers = json.loads(answers)
+        except Exception: answers = {}
+
+    st.markdown(f"**Ankieta:** {qdef_row.get('title','(bez nazwy)')}")
+
+    with st.form(f"form_{instance_row['id']}", border=False):
+        # 2) rendery pytań
+        for sec in sections:
+            with st.expander(sec["name"], expanded=True):
+                for q in sec["questions"]:
+                    code = q["code"]
+                    qtype = q["type"]
+                    help_ = q.get("help") or ""
+                    key = f"{instance_row['id']}_{code}"
+
+                    if qtype == "yesno":
+                        current = bool(str(answers.get(code, "")).lower() in ("1","true","t","yes","y"))
+                        v = st.checkbox(q["title"], value=current, help=help_, key=key)
+                        answers[code] = v
+
+                    elif qtype == "single":
+                        opts = [o[0] for o in (q.get("options") or [])] or ["No","Yes"]
+                        current = answers.get(code) if answers.get(code) in opts else None
+                        v = st.radio(q["title"], opts, index=(opts.index(current) if current in opts else 0), help=help_, key=key)
+                        answers[code] = v
+
+                    elif qtype == "multi":
+                        opts = [o[0] for o in (q.get("options") or [])]
+                        if not opts:  # fallback
+                            opts = ["Option A","Option B","Option C"]
+                        current = answers.get(code) or []
+                        v = st.multiselect(q["title"], opts, default=[x for x in current if x in opts], help=help_, key=key)
+                        answers[code] = v
+
+                    elif qtype == "scale":
+                        qmin = int(q.get("min") or 1)
+                        qmax = int(q.get("max") or 5)
+                        current = int(answers.get(code) or qmin)
+                        v = st.slider(q["title"], qmin, qmax, current, help=help_, key=key)
+                        answers[code] = v
+
+                    elif qtype == "number":
+                        qmin = float(q.get("min") or 0)
+                        qmax = float(q.get("max") or 100)
+                        current = float(answers.get(code) or qmin)
+                        v = st.number_input(q["title"], min_value=qmin, max_value=qmax, value=current, step=1.0, help=help_, key=key)
+                        answers[code] = v
+
+                    else:  # text / inne
+                        current = str(answers.get(code) or "")
+                        v = st.text_input(q["title"], value=current, help=help_, key=key)
+                        answers[code] = v
+
+        submitted = st.form_submit_button("Zapisz")
+        if submitted:
+            # 3) policz wynik + progres wg progów z definicji
+            res = compute_result(
+                sections,
+                answers,
+                green=float(qdef_row.get("green_threshold", 80.0) or 80.0),
+                amber=float(qdef_row.get("amber_threshold", 60.0) or 60.0),
+            )
+            status = "completed" if res["progress_pct"] == 100 else "in_progress"
+            try:
+                update_progress(client, instance_row["id"], res["progress_pct"], answers, status=status)
+                st.success(f"Zapisano. Wynik: {res['score_pct']}% → {res['color'].upper()} • Progres: {res['progress_pct']}%")
+                st.session_state["current_progress"] = res["progress_pct"]
+            except Exception as e:
+                st.error(f"Nie udało się zapisać: {e}")
+
 
 st.set_page_config(page_title="DORA Compliance - MVP", layout="wide")
 
@@ -356,17 +615,20 @@ def require_auth_magic_link() -> bool:
             st.session_state.pop("refresh_token", None)
 
     # d) Brak sesji — pokaż „kartę” z linkiem do strony logowania (z /site)
-    st.markdown("""
+    st.markdown(f"""
     <div style="background:#17171b;border:1px solid #26262b;border-radius:14px;padding:22px 18px;margin:18px 0">
       <h2 style="margin:0 0 12px 0">🔐 Logowanie wymagane</h2>
       <p style="color:#a7a7ad;margin:0 0 10px 0">
         Użyj przycisku na stronie Checkout & FAQ, aby wysłać sobie magic-link.
       </p>
       <p style="margin:0">
-        <a href="/DORA_Checkout_and_FAQ.html" style="color:#9b8cf0;text-decoration:none">➡️ Przejdź do: Checkout & FAQ</a>
+        <a href="{SITE_BASE_URL}/DORA_Checkout_and_FAQ.html" style="color:#9b8cf0;text-decoration:none">
+          ➡️ Przejdź do: Checkout & FAQ
+        </a>
       </p>
     </div>
     """, unsafe_allow_html=True)
+
     return False
 
 
@@ -668,16 +930,25 @@ def render_user_panel(client: Client, email: str):
     if cur:
         st.markdown("---")
         st.markdown(f"#### Wypełnianie ankiety: `{cur[:8]}…`")
-        # TODO: tutaj render Twoich pytań wg pliku/definicji (po sparsowaniu file_path).
-        # Na razie dajmy suwak postępu „na sucho”:
-        new_prog = st.slider("Postęp (%)", 0, 100, int(st.session_state.get("current_progress", 0)), 5)
-        if st.button("Zapisz postęp"):
-            try:
-                update_progress(client, cur, new_prog, answers=None, status="completed" if new_prog==100 else "in_progress")
-                st.session_state["current_progress"] = new_prog
-                st.success("Zapisano.")
-            except Exception as e:
-                st.error(f"Błąd zapisu: {e}")
+
+        # pobierz pełny wiersz instancji + definicję ankiety (progi + plik)
+        try:
+            inst_res = client.table("survey_instances").select("*").eq("id", cur).maybe_single().execute()
+            instance_row = getattr(inst_res, "data", None) or (isinstance(inst_res, dict) and inst_res.get("data"))
+            if not instance_row:
+                st.error("Nie znaleziono instancji.")
+                return
+            q_res = client.table("questionnaires").select("*").eq("id", instance_row["questionnaire_id"]).maybe_single().execute()
+            qdef_row = getattr(q_res, "data", None) or (isinstance(q_res, dict) and q_res.get("data"))
+            if not qdef_row:
+                st.error("Nie znaleziono definicji ankiety.")
+                return
+        except Exception as e:
+            st.error(f"Błąd pobierania danych: {e}")
+            return
+
+        render_instance_form(client, instance_row, qdef_row)
+
 
 
 with st.sidebar:
