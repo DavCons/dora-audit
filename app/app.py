@@ -10,6 +10,30 @@ from datetime import datetime
 
 SITE_BASE_URL = os.getenv("SITE_BASE_URL", "http://51.21.152.197:8080")
 
+def _get_query_params_dict():
+    """Zwraca query params jako zwykły dict[str, list[str]] (kompatybilnie z różnymi wersjami Streamlit)."""
+    try:
+        # Streamlit 1.31+ ma st.query_params (Mapping)
+        return dict(st.query_params)
+    except Exception:
+        # starsze wersje
+        return st.experimental_get_query_params()
+
+def _first(qp: dict, key: str):
+    """Zwraca pierwszy element z listy paramów lub sam string jeśli takowy."""
+    v = qp.get(key)
+    if isinstance(v, list):
+        return v[0] if v else None
+    return v
+
+def _clear_query_params():
+    try:
+        # nowe streamlity pozwalają mutować:
+        st.query_params.clear()
+    except Exception:
+        # starsze – ustaw pusty
+        st.experimental_set_query_params()
+
 # --- Supabase persistence helpers ---
 from datetime import datetime
 def _safe_get_user_identity(client):
@@ -556,13 +580,12 @@ def supa():
 def require_auth_magic_link() -> bool:
     client = supa()
 
-    # --- 1) powrót z magic-linka: ?code=... (PKCE)
-    qp = st.query_params if hasattr(st, "query_params") else st.experimental_get_query_params()
-    code = None
-    if isinstance(qp, dict):
-        raw_code = qp.get("code")
-        if isinstance(raw_code, list): code = raw_code[0]
-        elif isinstance(raw_code, str): code = raw_code
+    # --- 1) Pobierz query params jako dict
+    qp = _get_query_params_dict()
+    st.write("QP:", qp)  # tymczasowo
+
+    # --- 2) Ścieżka z ?code=... (PKCE)
+    code = _first(qp, "code")
     if code:
         with st.spinner("Signing you in…"):
             try:
@@ -572,35 +595,28 @@ def require_auth_magic_link() -> bool:
                 refresh = getattr(session, "refresh_token", None) or (session and session.get("refresh_token"))
                 if access:
                     try:
-                        # Prefer full session jeśli mamy oba
                         client.auth.set_session(access, refresh)
                     except Exception:
                         client.auth.set_auth(access)
-                    st.session_state["access_token"]  = access
-                    if refresh: st.session_state["refresh_token"] = refresh
-                    try: st.query_params.clear()
-                    except Exception: st.experimental_set_query_params()
+                    st.session_state["access_token"] = access
+                    if refresh:
+                        st.session_state["refresh_token"] = refresh
+                    _clear_query_params()
                     st.rerun()
-            except Exception:
+            except Exception as e:
                 st.error("Nie udało się wymienić code → session.")
-                try: st.query_params.clear()
-                except Exception: st.experimental_set_query_params()
+                _clear_query_params()
                 st.stop()
 
-    # --- 2) powrót z hash→query: ?access_token=&refresh_token=
-    access = refresh = None
-    if isinstance(qp, dict):
-        ra, rr = qp.get("access_token"), qp.get("refresh_token")
-        access  = ra[0] if isinstance(ra, list) else ra
-        refresh = rr[0] if isinstance(rr, list) else rr
-
+    # --- 3) Ścieżka z ?access_token=&refresh_token= ...
+    access = _first(qp, "access_token")
+    refresh = _first(qp, "refresh_token")
     if access:
-        # akceptuj access_token nawet bez refresh_token
         try:
             if refresh:
                 client.auth.set_session(access, refresh)
             else:
-                # v2: jeżeli odmówi set_session(None) – fallback do set_auth()
+                # brak refresh – ustaw chociaż bearer
                 try:
                     client.auth.set_session(access, None)
                 except Exception:
@@ -608,14 +624,15 @@ def require_auth_magic_link() -> bool:
             st.session_state["access_token"] = access
             if refresh:
                 st.session_state["refresh_token"] = refresh
-            try: st.query_params.clear()
-            except Exception: st.experimental_set_query_params()
+            _clear_query_params()
             st.rerun()
         except Exception:
-            pass  # przejdź niżej do prób z pamięci
+            # jeżeli się nie uda – spróbujemy dalej z pamięci
+            pass
 
-    # --- 3) zapamiętane tokeny?
-    at, rt = st.session_state.get("access_token"), st.session_state.get("refresh_token")
+    # --- 4) Odśwież z pamięci (jeśli wcześniej zalogowany)
+    at = st.session_state.get("access_token")
+    rt = st.session_state.get("refresh_token")
     if at:
         try:
             if rt:
@@ -632,7 +649,7 @@ def require_auth_magic_link() -> bool:
             st.session_state.pop("access_token", None)
             st.session_state.pop("refresh_token", None)
 
-    # --- 4) karta z linkiem do /site
+    # --- 5) Karta z linkiem do /site
     st.markdown(f"""
     <div style="background:#17171b;border:1px solid #26262b;border-radius:14px;padding:22px 18px;margin:18px 0">
       <h2 style="margin:0 0 12px 0">🔐 Logowanie wymagane</h2>
