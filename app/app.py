@@ -665,6 +665,45 @@ def require_auth_magic_link() -> bool:
     """, unsafe_allow_html=True)
     return False
 
+def _get_current_user_email(client: Client) -> str | None:
+    """Zwraca e-mail aktualnie zalogowanego użytkownika Supabase."""
+    try:
+        user = client.auth.get_user().user
+        return getattr(user, "email", None)
+    except Exception:
+        return None
+
+
+def _enforce_allowed_email(client: Client):
+    """
+    Sprawdza, czy e-mail użytkownika jest na whiteliście w tabeli allowed_emails.
+    Jeśli nie — zatrzymuje aplikację.
+    """
+    email = _get_current_user_email(client)
+    if not email:
+        st.error("Nie udało się ustalić adresu e-mail użytkownika.")
+        st.stop()
+
+    try:
+        res = client.table("allowed_emails").select("email").eq("email", email).maybe_single().execute()
+        row = getattr(res, "data", None) or (isinstance(res, dict) and res.get("data"))
+        if not row:
+            st.warning(f"Adres {email} nie znajduje się na liście dozwolonych użytkowników.")
+            st.markdown(f"""
+            <div style="background:#17171b;border:1px solid #26262b;border-radius:14px;padding:22px 18px;margin:18px 0">
+              <p style="color:#a7a7ad;">Aby uzyskać dostęp, poproś administratora o dopisanie Twojego adresu e-mail do whitelisty.</p>
+              <p style="margin:0">
+                <a href="{SITE_BASE_URL}/DORA_Checkout_and_FAQ.html" style="color:#9b8cf0;text-decoration:none">
+                  ➡️ Przejdź do: Checkout & FAQ
+                </a>
+              </p>
+            </div>
+            """, unsafe_allow_html=True)
+            st.stop()
+    except Exception as e:
+        st.error(f"Błąd podczas weryfikacji dostępu: {e}")
+        st.stop()
+
 
 if not require_auth_magic_link():
     st.stop()
