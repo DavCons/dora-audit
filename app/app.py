@@ -13,6 +13,8 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8501").strip()
 SITE_BASE_URL = os.getenv("SITE_BASE_URL", "http://localhost:8080").strip()
 
+DEBUG_LOGIN = True
+
 @st.cache_resource(show_spinner=False)
 def supa() -> Client:
     if not SUPABASE_URL or not SUPABASE_ANON_KEY:
@@ -50,6 +52,10 @@ def require_auth_magic_link() -> bool:
     client = supa()
 
     qp = _get_query_params_dict()
+
+    if DEBUG_LOGIN:
+        st.info(f"QP (server): {qp}")
+        st.caption(f"Session keys: {list(st.session_state.keys())}")
 
     # 1) Ścieżka PKCE z ?code=
     code = _first(qp, "code")
@@ -115,6 +121,15 @@ def require_auth_magic_link() -> bool:
             st.session_state.pop("refresh_token", None)
 
     # 4) Brak sesji → karta z linkiem do /site
+
+    if DEBUG_LOGIN:
+        try:
+            u = supa().auth.get_user()
+            st.caption(f"auth.get_user(): {u}")
+        except Exception as e:
+            st.caption(f"auth.get_user() error: {e}")
+
+
     st.markdown(f"""
     <div style="background:#17171b;border:1px solid #26262b;border-radius:14px;padding:22px 18px;margin:18px 0">
       <h2 style="margin:0 0 12px 0">🔐 Logowanie wymagane</h2>
