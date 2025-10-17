@@ -2,6 +2,27 @@
 import os
 from datetime import datetime
 import streamlit as st
+
+# --- HASH → QUERY bridge (dla linków z #access_token) ---
+st.markdown("""
+<script>
+(function(){
+  try{
+    var h = window.location.hash || "";
+    if (h && h.indexOf("access_token=") !== -1){
+      var params = new URLSearchParams(h.substring(1));
+      // zabezpieczenie przed pętlą:
+      if (!params.get("from_hash")) {
+        params.set("from_hash","1");
+        var target = window.location.origin + window.location.pathname + "?" + params.toString();
+        window.location.replace(target);
+      }
+    }
+  }catch(e){ console.log("hash→query bridge error", e); }
+})();
+</script>
+""", unsafe_allow_html=True)
+
 import streamlit.components.v1 as components
 
 from supabase import create_client
