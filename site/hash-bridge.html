@@ -1,10 +1,14 @@
 <!doctype html><meta charset="utf-8">
 <title>Redirecting…</title>
 <script>
-  // Przerób #access_token=… na ?access_token=…
+  // konwersja #access_token=… na ?access_token=…
   (function(){
     const APP = "http://51.21.152.197:8501";
     const h = location.hash ? location.hash.slice(1) : "";
     location.replace(h ? (APP + "?" + h) : APP);
   })();
 </script>
+<body style="background:#121212;color:#ddd;font-family:system-ui,Segoe UI,Roboto,Arial">
+  <h2>🔁 Przekierowanie do aplikacji...</h2>
+  <p>Otwieram DORA Audit App, proszę czekać.</p>
+</body>
