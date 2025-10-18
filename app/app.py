@@ -539,7 +539,7 @@ def render_admin_whitelist_block(client: Client):
     col1, col2, col3 = st.columns([1,1,1])
 
     with col1:
-        if st.button("Dodaj do whitelisty (user)", disabled=not new_email):
+        if st.button("Dodaj do whitelisty (user)", type="primary", disabled=not new_email):
             try:
                 _whitelist_add_user(client, new_email)
                 st.success(f"Dodano do whitelisty: {new_email}")
