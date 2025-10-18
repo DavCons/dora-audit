@@ -3,6 +3,49 @@ import os
 from datetime import datetime
 import streamlit as st
 
+# --- na samej górze (po importach os/datetime/streamlit) ---
+from pathlib import Path
+
+# === Wstrzyknięcie globalnego CSS ===
+def _inject_global_css():
+    css_path = Path(__file__).with_name("assets") / "styles.css"
+    if css_path.exists():
+        st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+
+# === Proste komponenty UI (spójne z /site) ===
+def ui_topbar(site_base_url: str):
+    st.markdown(f"""
+    <div class="topbar">
+      <div style="display:flex;gap:10px;align-items:center;">
+        <span class="badge">DORA Audit</span>
+      </div>
+      <div class="links">
+        <a href="{site_base_url}/DORA_Checkout_and_FAQ.html">Checkout & FAQ</a>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def ui_header(title: str, subtitle: str = ""):
+    st.markdown(f"""
+    <div class="section">
+      <div class="page-title">{title}</div>
+      {"<div class='muted'>" + subtitle + "</div>" if subtitle else ""}
+    </div>
+    """, unsafe_allow_html=True)
+
+def ui_card(title: str, body_html: str = "", footer_html: str = ""):
+    st.markdown(f"""
+    <div class="card">
+      {"<h3>"+title+"</h3>" if title else ""}
+      {body_html}
+      {("<div style='margin-top:10px'>" + footer_html + "</div>") if footer_html else ""}
+    </div>
+    """, unsafe_allow_html=True)
+
+def ui_button(label: str, href: str = "#", kind: str = "primary"):
+    cls = "btn" if kind == "primary" else "btn secondary"
+    st.markdown(f"""<a class="{cls}" href="{href}">{label}</a>""", unsafe_allow_html=True)
+
 # --- HASH → QUERY bridge (dla linków z #access_token) ---
 st.markdown("""
 <script>
@@ -34,7 +77,7 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8501").strip()
 SITE_BASE_URL = os.getenv("SITE_BASE_URL", "http://localhost:8080").strip()
 
-DEBUG_LOGIN = True
+DEBUG_LOGIN = false
 
 @st.cache_resource(show_spinner=False)
 def supa() -> Client:
@@ -150,20 +193,11 @@ def require_auth_magic_link() -> bool:
         except Exception as e:
             st.caption(f"auth.get_user() error: {e}")
 
-
-    st.markdown(f"""
-    <div style="background:#17171b;border:1px solid #26262b;border-radius:14px;padding:22px 18px;margin:18px 0">
-      <h2 style="margin:0 0 12px 0">🔐 Logowanie wymagane</h2>
-      <p style="color:#a7a7ad;margin:0 0 10px 0">
-        Użyj przycisku na stronie Checkout & FAQ, aby wysłać sobie magic-link.
-      </p>
-      <p style="margin:0">
-        <a href="{SITE_BASE_URL}/DORA_Checkout_and_FAQ.html" style="color:#9b8cf0;text-decoration:none">
-          ➡️ Przejdź do: Checkout & FAQ
-        </a>
-      </p>
-    </div>
-    """, unsafe_allow_html=True)
+    ui_card(
+        "🔐 Logowanie wymagane",
+        "<p class='muted'>Użyj przycisku na stronie Checkout & FAQ, aby wysłać sobie magic-link.</p>",
+        f"<a class='btn' href='{SITE_BASE_URL}/DORA_Checkout_and_FAQ.html'>➡️ Przejdź do: Checkout & FAQ</a>"
+    )
     return False
 
 
@@ -213,35 +247,42 @@ def is_admin(client: Client, email: str) -> bool:
 
 # ========= Widoki =========
 def render_admin_panel(client: Client, email: str):
-    st.subheader("👑 Panel administracyjny")
-    st.caption(f"Zalogowano jako: {email}")
+    ui_header("👑 Panel administracyjny", f"Zalogowano jako: {email}")
 
-    with st.expander("Wgraj nową ankietę (CSV/JSON)", expanded=True):
+    with st.container():
+        ui_card(
+            "Wgraj nową ankietę",
+            """
+            <div class='muted'>Załaduj plik CSV/JSON oraz ustaw progi „green/amber”.</div>
+            """,
+        )
         upl = st.file_uploader("Plik ankiety", type=["csv", "json"])
-        green = st.number_input("Próg GREEN (%)", 0, 100, 80)
-        amber = st.number_input("Próg AMBER (%)", 0, 100, 60)
-        if st.button("Zapisz konfigurację", type="primary", use_container_width=True):
-            # TODO: zapisz do supabase storage/tables wg Twojego modelu
-            st.success("Konfiguracja zapisana (placeholder).")
+        colg, cola = st.columns(2)
+        with colg:
+            green = st.number_input("Próg GREEN (%)", 0, 100, 80)
+        with cola:
+            amber = st.number_input("Próg AMBER (%)", 0, 100, 60)
+        st.button("Zapisz konfigurację", type="primary")
 
-    st.divider()
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    with st.expander("Lista dozwolonych adresów", expanded=False):
+    with st.container():
+        ui_card("Whitelist (allowed_emails)")
         try:
             res = client.table("allowed_emails").select("*").order("email").execute()
-            rows = getattr(res, "data", None) or (isinstance(res, dict) and res.get("data")) or []
-            st.dataframe(rows, use_container_width=True)
+            rows = getattr(res, "data", None) or []
+            st.dataframe(rows, use_container_width=True, hide_index=True)
         except Exception as e:
             st.error(f"Nie udało się pobrać listy: {e}")
 
 
 def render_user_panel(client: Client, email: str):
-    st.subheader("📋 Moje ankiety")
-    st.caption(f"Zalogowano jako: {email}")
+    ui_header("📋 Moje ankiety", f"Zalogowano jako: {email}")
 
-    # TODO: pobieranie statusów z tabeli np. surveys/submissions
-    # Na razie placeholder:
-    st.info("Tu pojawi się lista Twoich ankiet i status realizacji (placeholder).")
+    ui_card(
+        "Status realizacji",
+        "<p class='muted'>Tu pojawi się lista Twoich ankiet i status (placeholder).</p>"
+    )
 
     col1, col2 = st.columns(2)
     with col1:
@@ -254,7 +295,7 @@ def render_user_panel(client: Client, email: str):
 
 # ========= Pasek sesji / logout =========
 def session_bar(client: Client):
-    st.sidebar.markdown("### 🔐 Session")
+    st.sidebar.markdown("#### 👤 Sesja", help="Informacje o zalogowanym użytkowniku")
     try:
         u = client.auth.get_user().user
         email = getattr(u, "email", "—")
@@ -284,6 +325,10 @@ def session_bar(client: Client):
 # Nagłówek strony
 st.set_page_config(page_title="DORA Audit — MVP", layout="wide")
 
+# po st.set_page_config()
+_inject_global_css()
+ui_topbar(SITE_BASE_URL)
+
 # 1) Autoryzacja
 if not require_auth_magic_link():
     st.stop()
@@ -297,7 +342,8 @@ current_email = _get_current_user_email(client) or ""
 user_is_admin = is_admin(client, current_email)
 
 # 4) Tytuł i nawigacja
-st.title("DORA Audit — MVP")
+ui_header("DORA Audit — MVP")
+
 page = st.sidebar.radio(
     "Nawigacja",
     ["Moje ankiety"] + (["Panel administracyjny"] if user_is_admin else [])

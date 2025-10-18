@@ -1,0 +1,17 @@
+[theme]
+base="dark"
+primaryColor="#9b8cf0"       # akcent jak w /site
+backgroundColor="#0e0f12"    # tło
+secondaryBackgroundColor="#15161b"
+textColor="#e6e7eb"
+font="sans serif"
+
+[server]
+headless = true
+enableCORS = false
+address = "0.0.0.0"
+port = 8501
+
+[browser]
+gatherUsageStats = false
+

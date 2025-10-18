@@ -1,0 +1,77 @@
+/* ukryj pasek menu/stopkę streamlit */
+#MainMenu, footer { display: none !important; }
+
+/* reset i typografia */
+:root {
+  --bg: #0e0f12;
+  --bg2: #15161b;
+  --bg3: #1b1d23;
+  --text: #e6e7eb;
+  --muted: #a7a7ad;
+  --brand: #9b8cf0;
+  --border: #26262b;
+  --ok: #5dd69d;
+  --warn: #f2c44f;
+  --err: #ff7a7a;
+  --radius: 14px;
+  --shadow: 0 10px 30px rgba(0,0,0,.35);
+}
+
+html, body, .stApp { background: var(--bg); color: var(--text); }
+
+/* kontenery/sekcje */
+.section {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px 18px;
+  margin: 16px 0;
+  box-shadow: var(--shadow);
+}
+
+/* “karta” jak na /site */
+.card {
+  background: linear-gradient(180deg, var(--bg2), var(--bg3));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px 16px;
+  margin: 14px 0;
+}
+
+.card h3, .card h4 { margin: 0 0 10px 0; }
+.muted { color: var(--muted); }
+
+/* guzik primary w stylu /site */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 14px;
+  background: var(--brand); color: #0b0b0b;
+  border-radius: 12px; border: 0; cursor: pointer;
+  font-weight: 600; text-decoration: none;
+  transition: transform .04s ease, filter .2s ease;
+}
+.btn:hover { filter: brightness(1.05); transform: translateY(-1px); }
+.btn.secondary {
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* odcień dla ikon/emoji “badge” */
+.badge { font-size: .92rem; color: var(--muted); }
+
+/* tytuł strony */
+.page-title {
+  font-size: clamp(28px, 4.2vw, 40px);
+  font-weight: 800; letter-spacing: .3px;
+  margin: 8px 0 16px 0;
+}
+
+/* mały top-bar (opcjonalnie) */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px 12px; margin: 8px 0 18px 0;
+}
+.topbar .links a { color: var(--muted); text-decoration: none; margin-left: 12px; }
+.topbar .links a:hover { color: var(--text); }
+
