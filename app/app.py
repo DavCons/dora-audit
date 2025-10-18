@@ -246,37 +246,148 @@ def is_admin(client: Client, email: str) -> bool:
 
 
 # ========= Widoki =========
-def render_admin_panel(client: Client, email: str):
+def _parse_uploaded_file(upl) -> Dict[str, Any]:
+    """
+    Zamienia CSV/JSON na standardowy JSON “ankiety”.
+    Przyjmijmy prosty format: lista pytań [{id, text, ...}].
+    """
+    if upl is None:
+        return {}
+    name = upl.name.lower()
+    if name.endswith(".json"):
+        return json.load(upl)
+    elif name.endswith(".csv"):
+        df = pd.read_csv(upl)
+        return json.loads(df.to_json(orient="records"))
+    else:
+        raise ValueError("Obsługiwane typy: CSV lub JSON")
+
+def render_admin_panel(client, email: str):
     ui_header("👑 Panel administracyjny", f"Zalogowano jako: {email}")
 
-    with st.container():
-        ui_card(
-            "Wgraj nową ankietę",
-            """
-            <div class='muted'>Załaduj plik CSV/JSON oraz ustaw progi „green/amber”.</div>
-            """,
-        )
-        upl = st.file_uploader("Plik ankiety", type=["csv", "json"])
-        colg, cola = st.columns(2)
-        with colg:
-            green = st.number_input("Próg GREEN (%)", 0, 100, 80)
-        with cola:
-            amber = st.number_input("Próg AMBER (%)", 0, 100, 60)
-        st.button("Zapisz konfigurację", type="primary")
+    # --- wgrywanie nowej wersji ---
+    ui_card("Wgraj nową ankietę",
+            "<div class='muted'>Załaduj plik CSV/JSON oraz ustaw progi „green/amber”.</div>")
+
+    upl = st.file_uploader("Plik ankiety", type=["csv", "json"], label_visibility="visible")
+    colg, cola, colc = st.columns([1,1,1])
+    with colg:
+        green = st.number_input("Próg GREEN (%)", min_value=0, max_value=100, value=80, step=1,
+                                label_visibility="visible")
+    with cola:
+        amber = st.number_input("Próg AMBER (%)", min_value=0, max_value=100, value=60, step=1,
+                                label_visibility="visible")
+    with colc:
+        set_active_now = st.checkbox("Ustaw jako aktywną", value=False)
+
+    if st.button("Zapisz nową wersję", type="primary"):
+        try:
+            content = _parse_uploaded_file(upl)
+            if not content:
+                st.error("Brak/niepoprawny plik.")
+            else:
+                survey_id = _get_or_create_survey(client)
+                next_ver = _get_next_version(client, survey_id)
+                thresholds = {"green": int(green), "amber": int(amber)}
+                ins = (client.table("survey_versions").insert({
+                        "survey_id": survey_id,
+                        "version": next_ver,
+                        "content": content,
+                        "thresholds": thresholds,
+                        "is_active": False,
+                        "created_by": email,
+                      })
+                      .select("id")
+                      .single()
+                      .execute())
+                ver_id = ins.data["id"]
+                if set_active_now:
+                    _activate_version(client, survey_id, ver_id)
+                st.success(f"Zapisano wersję {next_ver}{' (aktywna)' if set_active_now else ''}.")
+        except Exception as e:
+            st.error(f"Nie udało się zapisać wersji: {e}")
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-    with st.container():
-        ui_card("Whitelist (allowed_emails)")
-        try:
-            res = client.table("allowed_emails").select("*").order("email").execute()
-            rows = getattr(res, "data", None) or []
-            st.dataframe(rows, use_container_width=True, hide_index=True)
-        except Exception as e:
-            st.error(f"Nie udało się pobrać listy: {e}")
+    # --- wybór aktywnej wersji ---
+    ui_card("Aktywna wersja")
+    try:
+        survey_id = _get_or_create_survey(client)
+        res = (client.table("survey_versions")
+               .select("id, version, is_active, created_at, thresholds")
+               .eq("survey_id", survey_id)
+               .order("version", desc=True)
+               .execute())
+        rows = getattr(res, "data", None) or []
+        if rows:
+            labels = [f"v{r['version']}  {'(akty.)' if r['is_active'] else ''}  /  "
+                      f"prog: G{r['thresholds'].get('green','?')} A{r['thresholds'].get('amber','?')}  "
+                      f"/ {r['created_at']}" for r in rows]
+            idx = st.selectbox("Wersje", options=list(range(len(rows))), format_func=lambda i: labels[i],
+                               label_visibility="visible")
+            if st.button("Ustaw wybraną wersję jako aktywną"):
+                _activate_version(client, survey_id, rows[idx]["id"])
+                st.success(f"Aktywowano wersję v{rows[idx]['version']}.")
+                st.experimental_rerun()
+        else:
+            st.info("Brak wersji ankiety.")
+    except Exception as e:
+        st.error(f"Nie udało się pobrać wersji: {e}")
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # --- zarządzanie whitelistą i adminami ---
+    ui_card("Whitelist / Administratorzy")
+    new_admin = st.text_input("Dodaj adres e-mail jako administratora", "", placeholder="user@firma.com",
+                              label_visibility="visible")
+    cols = st.columns([1,1])
+    with cols[0]:
+        if st.button("Dodaj do whitelisty (user)"):
+            try:
+                client.table("allowed_emails").upsert({
+                    "email": new_admin.strip().lower(),
+                    "is_admin": False,
+                    "source": "admin_panel"
+                }, on_conflict="email").execute()
+                st.success("Dodano/zmodyfikowano w whitelist.")
+            except Exception as e:
+                st.error(f"Błąd whitelist: {e}")
+    with cols[1]:
+        if st.button("Dodaj jako administratora"):
+            try:
+                client.table("allowed_emails").upsert({
+                    "email": new_admin.strip().lower(),
+                    "is_admin": True,
+                    "source": "admin_panel"
+                }, on_conflict="email").execute()
+                st.success("Dodano/zmodyfikowano administratora.")
+            except Exception as e:
+                st.error(f"Błąd admin: {e}")
+
+    # podgląd listy
+    try:
+        tab = client.table("allowed_emails").select("email, created_at, source, is_admin").order("email").execute()
+        st.dataframe(getattr(tab, "data", None) or [], use_container_width=True, hide_index=True)
+    except Exception as e:
+        st.error(f"Nie udało się pobrać listy: {e}")
+
 
 
 def render_user_panel(client: Client, email: str):
+
+    ui_header("📋 Moje ankiety", f"Zalogowano jako: {email}")
+    active = _load_active_version(client)
+
+    if active:
+        thr = active["thresholds"]
+        ui_card(
+            f"Aktywna wersja ankiety: v{active['version']}",
+            f"<div class='muted'>Progi: GREEN {thr.get('green')}% • AMBER {thr.get('amber')}%</div>"
+        )
+    else:
+        st.warning("Brak aktywnej wersji ankiety. Skontaktuj się z administratorem.")
+
+    # …dalej Twoje przyciski i lista “Moje ankiety”…
     ui_header("📋 Moje ankiety", f"Zalogowano jako: {email}")
 
     ui_card(
