@@ -5,6 +5,7 @@ import streamlit as st
 
 # --- na samej górze (po importach os/datetime/streamlit) ---
 from pathlib import Path
+from typing import Optional, Tuple, Dict, Any
 
 # === Wstrzyknięcie globalnego CSS ===
 def _inject_global_css():
