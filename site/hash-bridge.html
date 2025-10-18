@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8">
+<title>Redirecting…</title>
+<script>
+  // Przerób #access_token=… na ?access_token=…
+  (function(){
+    const APP = "http://51.21.152.197:8501";
+    const h = location.hash ? location.hash.slice(1) : "";
+    location.replace(h ? (APP + "?" + h) : APP);
+  })();
+</script>
