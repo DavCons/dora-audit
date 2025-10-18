@@ -210,56 +210,71 @@ def _enforce_allowed_email(client: Client):
     if not email:
         st.error("Nie udało się ustalić adresu e-mail użytkownika.")
         st.stop()
-    try:
-        res = (client.table("allowed_emails")
-               .select("email")
-               .eq("email", email)
-               .maybe_single()
-               .execute())
-        row = getattr(res, "data", None) or (isinstance(res, dict) and res.get("data"))
-        if not row:
-            ui_card(
-                "⛔ Brak dostępu",
-                f"<p class='muted'>Adres <b>{email}</b> nie znajduje się na liście dozwolonych użytkowników.</p>",
-                f"<a class='btn' href='{SITE_BASE_URL}/DORA_Checkout_and_FAQ.html'>➡️ Przejdź do: Checkout & FAQ</a>"
-            )
-            st.stop()
-    except Exception as e:
-        st.error(f"Błąd podczas weryfikacji dostępu: {e}")
+    res = (client.table("allowed_emails")
+           .select("email")
+           .eq("email", email)
+           .limit(1)
+           .execute())
+    if not res.data:
+        ui_card(
+            "⛔ Brak dostępu",
+            f"<p class='muted'>Adres <b>{email}</b> nie znajduje się na liście dozwolonych użytkowników.</p>",
+            f"<a class='btn' href='{SITE_BASE_URL}/DORA_Checkout_and_FAQ.html'>➡️ Przejdź do: Checkout & FAQ</a>"
+        )
         st.stop()
 
 def is_admin(client: Client, email: str) -> bool:
     if not email:
         return False
-    try:
-        res = (client.table("allowed_emails")
-               .select("is_admin")
-               .eq("email", email)
-               .maybe_single()
-               .execute())
-        row = getattr(res, "data", None) or (isinstance(res, dict) and res.get("data"))
-        return bool(row and row.get("is_admin"))
-    except Exception:
-        return False
+    res = (client.table("allowed_emails")
+           .select("is_admin")
+           .eq("email", email)
+           .limit(1)
+           .execute())
+    return bool(res.data and res.data[0].get("is_admin"))
 
 # =============================================================================
 #  Ankiety / wersje (survey + survey_versions)
 # =============================================================================
 def _get_or_create_survey(client: Client) -> Dict[str, Any]:
-    res = client.from_("surveys").select("*").eq("name", SURVEY_NAME).limit(1).execute()
+    # 1) Spróbuj odczytać istniejącą
+    res = (client.table("surveys")
+           .select("*")
+           .eq("name", SURVEY_NAME)
+           .limit(1)
+           .execute())
     if res.data:
         return res.data[0]
-    ins = client.from_("surveys").insert({"name": SURVEY_NAME}).select("*").single().execute()
+
+    # 2) Wstaw nową
+    ins = client.table("surveys").insert({"name": SURVEY_NAME}).execute()
     if ins.error:
-        # wyścig – spróbuj jeszcze raz odczytać
-        res2 = client.from_("surveys").select("*").eq("name", SURVEY_NAME).limit(1).execute()
+        # możliwy wyścig – spróbuj ponownie odczytać
+        res2 = (client.table("surveys")
+                .select("*")
+                .eq("name", SURVEY_NAME)
+                .limit(1)
+                .execute())
         if not res2.data:
-            raise RuntimeError(f"Nie udało się utworzyć ani odczytać survey: {ins.error}")
+            raise RuntimeError(f"Nie udało się utworzyć/odczytać survey: {ins.error}")
         return res2.data[0]
-    return ins.data
+
+    # insert zwraca listę rekordów
+    if not ins.data:
+        # ostatni fallback – odczytaj
+        res3 = (client.table("surveys")
+                .select("*")
+                .eq("name", SURVEY_NAME)
+                .limit(1)
+                .execute())
+        if not res3.data:
+            raise RuntimeError("Survey utworzony, ale nie udało się go odczytać.")
+        return res3.data[0]
+
+    return ins.data[0]
 
 def _next_version_number(client: Client, survey_id: str) -> int:
-    res = (client.from_("survey_versions")
+    res = (client.table("survey_versions")
            .select("version")
            .eq("survey_id", survey_id)
            .order("version", desc=True)
@@ -270,14 +285,21 @@ def _next_version_number(client: Client, survey_id: str) -> int:
     return 1
 
 def _set_active_version(client: Client, survey_id: str, version_id: str) -> None:
-    # wyłącz inne
-    upd1 = client.from_("survey_versions").update({"is_active": False}).eq("survey_id", survey_id).execute()
+    # Wyłącz wszystkie
+    upd1 = (client.table("survey_versions")
+            .update({"is_active": False})
+            .eq("survey_id", survey_id)
+            .execute())
     if upd1.error:
-        raise RuntimeError(f"Deactive others: {upd1.error}")
-    # włącz wskazaną
-    upd2 = client.from_("survey_versions").update({"is_active": True}).eq("id", version_id).execute()
+        raise RuntimeError(f"Deaktywacja innych wersji: {upd1.error}")
+
+    # Włącz wskazaną
+    upd2 = (client.table("survey_versions")
+            .update({"is_active": True})
+            .eq("id", version_id)
+            .execute())
     if upd2.error:
-        raise RuntimeError(f"Activate chosen: {upd2.error}")
+        raise RuntimeError(f"Aktywacja wybranej wersji: {upd2.error}")
 
 def _save_new_version(
     client: Client,
@@ -289,26 +311,43 @@ def _save_new_version(
     set_active: bool,
 ) -> Dict[str, Any]:
     version_no = _next_version_number(client, survey_id)
-    ins = (client.from_("survey_versions").insert({
-        "survey_id":       survey_id,
-        "version":         version_no,
-        "content":         content,
-        "threshold_green": int(threshold_green),
-        "threshold_amber": int(threshold_amber),
-        "created_by":      created_by,
-        "is_active":       False,
-    }).select("*").single().execute())
+    ins = (client.table("survey_versions")
+           .insert({
+               "survey_id":       survey_id,
+               "version":         version_no,
+               "content":         content,
+               "threshold_green": int(threshold_green),
+               "threshold_amber": int(threshold_amber),
+               "created_by":      created_by,
+               "is_active":       False,
+           })
+           .execute())
     if ins.error:
         raise RuntimeError(f"Insert survey_versions: {ins.error}")
-    ver = ins.data
+
+    if not ins.data:
+        # odczytaj świeżo wstawioną po (survey_id, version)
+        ref = (client.table("survey_versions")
+               .select("*")
+               .eq("survey_id", survey_id)
+               .eq("version", version_no)
+               .limit(1)
+               .execute())
+        if not ref.data:
+            raise RuntimeError("Wersja zapisana, ale nie udało się jej odczytać.")
+        ver = ref.data[0]
+    else:
+        ver = ins.data[0]
+
     if set_active:
         _set_active_version(client, survey_id, ver["id"])
         ver["is_active"] = True
+
     return ver
 
 def _load_active_version(client: Client) -> Optional[Dict[str, Any]]:
     survey = _get_or_create_survey(client)
-    res = (client.from_("survey_versions")
+    res = (client.table("survey_versions")
            .select("*")
            .eq("survey_id", survey["id"])
            .eq("is_active", True)
@@ -320,7 +359,7 @@ def _load_active_version(client: Client) -> Optional[Dict[str, Any]]:
 
 def _list_versions(client: Client) -> List[Dict[str, Any]]:
     survey = _get_or_create_survey(client)
-    res = (client.from_("survey_versions")
+    res = (client.table("survey_versions")
            .select("id, version, created_at, threshold_green, threshold_amber, is_active, created_by")
            .eq("survey_id", survey["id"])
            .order("version", desc=True)
@@ -591,4 +630,3 @@ else:
     render_user_panel(client, current_email)
 
 session_bar(client)
-
