@@ -441,8 +441,6 @@ def render_admin_panel(client, email: str):
     render_admin_whitelist_block(client)
 
 
-def render_user_panel(client: Client, email: str):
-
 def render_user_panel(client, current_email: str):
     st.subheader("Moje ankiety")
 
