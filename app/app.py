@@ -665,19 +665,19 @@ def render_user_panel(client: Client, email: str):
         )
         c1, c2 = st.columns(2)
         with c1:
-            st.button("➕ Rozpocznij nową ankietę", type="primary", use_container_width=True):
+            st.button("➕ Rozpocznij nową ankietę", type="primary", use_container_width=True)
                 st.session_state.pop("resume_session_id", None)
                 render_take_survey(client=supa(), user_email=current_email)
                 st.stop()
         with c2:
             st.button("⤴️ Wróć do ostatniej ankiety", use_container_width=True)
-
+                # jeśli ktoś kliknął "Wznów"
+                if st.session_state.get("resume_session_id"):
+                    render_take_survey(supa(), current_email, session_id=st.session_state["resume_session_id"])
+                    st.stop()
+                    
         render_my_attempts(supa(), current_email)
 
-        # jeśli ktoś kliknął "Wznów"
-        if st.session_state.get("resume_session_id"):
-            render_take_survey(supa(), current_email, session_id=st.session_state["resume_session_id"])
-            st.stop()
     else:
         ui_card("Brak aktywnej wersji ankiety", "<p class='muted'>Skontaktuj się z administratorem.</p>")
 
