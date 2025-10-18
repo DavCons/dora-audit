@@ -498,63 +498,77 @@ def render_admin_upload_block(client: Client, current_email: str):
         except Exception as e:
             st.error(f"❌ Nie udało się zapisać nowej wersji: {e}")
 
+def _whitelist_all(client: Client) -> List[Dict[str, Any]]:
+    return qexec(
+        client.table("allowed_emails")
+              .select("email, created_at, source, is_admin")
+              .order("created_at", desc=True)
+    )
+
+def _whitelist_add_user(client: Client, email: str) -> None:
+    email = email.strip().lower()
+    # upsert – jeżeli rekord istnieje, nie popsuj flagi admina
+    qexec(
+        client.table("allowed_emails").upsert(
+            {"email": email, "source": "admin"},
+            on_conflict="email"
+        )
+    )
+
+def _whitelist_add_admin(client: Client, email: str) -> None:
+    email = email.strip().lower()
+    qexec(
+        client.table("allowed_emails").upsert(
+            {"email": email, "source": "admin", "is_admin": True},
+            on_conflict="email"
+        )
+    )
+
+def _whitelist_remove_admin(client: Client, email: str) -> None:
+    email = email.strip().lower()
+    qexec(
+        client.table("allowed_emails")
+              .update({"is_admin": False})
+              .eq("email", email)
+    )
+
 def render_admin_whitelist_block(client: Client):
     st.subheader("Whitelist / Administratorzy")
-    email_input = st.text_input("Dodaj adres e-mail", placeholder="user@firma.com")
-    c1, c2, c3 = st.columns([1,1,1])
-    with c1:
-        if st.button("Dodaj do whitelisty (user)", type="secondary", use_container_width=True):
-            if not email_input:
-                st.error("Podaj e-mail.")
-            else:
-                up = (client.from_("allowed_emails")
-                      .upsert({"email": email_input.strip().lower(),
-                               "source": "admin",
-                               "is_admin": False}, on_conflict="email")
-                      .execute())
-                if up.error:
-                    st.error(up.error.message)
-                else:
-                    st.success(f"Dodano/zaktualizowano {email_input} jako użytkownika.")
-    with c2:
-        if st.button("Dodaj jako administratora", type="primary", use_container_width=True):
-            if not email_input:
-                st.error("Podaj e-mail.")
-            else:
-                up = (client.from_("allowed_emails")
-                      .upsert({"email": email_input.strip().lower(),
-                               "source": "admin",
-                               "is_admin": True}, on_conflict="email")
-                      .execute())
-                if up.error:
-                    st.error(up.error.message)
-                else:
-                    st.success(f"{email_input} posiada uprawnienia administratora.")
-    with c3:
-        if st.button("Usuń uprawnienia admin", use_container_width=True):
-            if not email_input:
-                st.error("Podaj e-mail.")
-            else:
-                up = (client.from_("allowed_emails")
-                      .upsert({"email": email_input.strip().lower(),
-                               "is_admin": False}, on_conflict="email")
-                      .execute())
-                if up.error:
-                    st.error(up.error.message)
-                else:
-                    st.success(f"Usunięto uprawnienia admin dla {email_input}.")
+
+    new_email = st.text_input("Dodaj adres e-mail", placeholder="user@firma.com")
+    col1, col2, col3 = st.columns([1,1,1])
+
+    with col1:
+        if st.button("Dodaj do whitelisty (user)", disabled=not new_email):
+            try:
+                _whitelist_add_user(client, new_email)
+                st.success(f"Dodano do whitelisty: {new_email}")
+            except Exception as e:
+                st.error(str(e))
+
+    with col2:
+        if st.button("Dodaj jako administratora", disabled=not new_email):
+            try:
+                _whitelist_add_admin(client, new_email)
+                st.success(f"Nadano uprawnienia admin: {new_email}")
+            except Exception as e:
+                st.error(str(e))
+
+    with col3:
+        if st.button("Usuń uprawnienia admin", disabled=not new_email):
+            try:
+                _whitelist_remove_admin(client, new_email)
+                st.success(f"Usunięto uprawnienia admin: {new_email}")
+            except Exception as e:
+                st.error(str(e))
 
     st.divider()
-    lst = (client.from_("allowed_emails")
-           .select("email, created_at, source, is_admin")
-           .order("email")
-           .execute())
-    if lst.error:
-        st.error(lst.error.message)
-    else:
-        import pandas as _pd
-        df = _pd.DataFrame(lst.data or [])
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    st.caption("Lista dozwolonych adresów")
+    try:
+        rows = _whitelist_all(client)
+        st.dataframe(rows, use_container_width=True)
+    except Exception as e:
+        st.error(str(e))
 
 def render_admin_panel(client: Client, email: str):
     ui_header("👑 Panel administracyjny", f"Zalogowano jako: {email}")
