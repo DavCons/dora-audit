@@ -539,7 +539,7 @@ def render_admin_whitelist_block(client: Client):
     col1, col2, col3 = st.columns([1,1,1])
 
     with col1:
-        if st.button("Dodaj do whitelisty (user)", type="primary", disabled=not new_email):
+        if st.button("Dodaj do whitelisty (user)", type="secondary", disabled=not new_email):
             try:
                 _whitelist_add_user(client, new_email)
                 st.success(f"Dodano do whitelisty: {new_email}")
@@ -547,7 +547,7 @@ def render_admin_whitelist_block(client: Client):
                 st.error(str(e))
 
     with col2:
-        if st.button("Dodaj jako administratora", disabled=not new_email):
+        if st.button("Dodaj jako administratora", type="secondary", disabled=not new_email):
             try:
                 _whitelist_add_admin(client, new_email)
                 st.success(f"Nadano uprawnienia admin: {new_email}")
@@ -555,7 +555,7 @@ def render_admin_whitelist_block(client: Client):
                 st.error(str(e))
 
     with col3:
-        if st.button("Usuń uprawnienia admin", disabled=not new_email):
+        if st.button("Usuń uprawnienia admin", type="secondary", disabled=not new_email):
             try:
                 _whitelist_remove_admin(client, new_email)
                 st.success(f"Usunięto uprawnienia admin: {new_email}")
