@@ -5,7 +5,9 @@ import streamlit as st
 
 # --- na samej górze (po importach os/datetime/streamlit) ---
 from pathlib import Path
-from typing import Optional, Tuple, Dict, Any
+from typing import Any, Dict, List, Optional, Tuple  # <-- potrzebne dla adnotacji typu
+import json
+import uuid
 
 # === Wstrzyknięcie globalnego CSS ===
 def _inject_global_css():
@@ -246,6 +248,79 @@ def is_admin(client: Client, email: str) -> bool:
         return False
 
 
+SURVEY_NAME = "DORA Audit"  # możesz nazwać inaczej
+
+def _get_or_create_survey(client) -> Dict[str, Any]:
+    """Zapewnia 1 rekord w public.surveys dla danej ankiety (po nazwie)."""
+    res = client.from_("surveys").select("*").eq("name", SURVEY_NAME).limit(1).execute()
+    if res.data and len(res.data) > 0:
+        return res.data[0]
+    ins = client.from_("surveys").insert({"name": SURVEY_NAME}).select("*").single().execute()
+    if ins.error:
+        # wyścig: jeśli ktoś wstawił w międzyczasie, to jeszcze raz wybierz
+        res2 = client.from_("surveys").select("*").eq("name", SURVEY_NAME).limit(1).execute()
+        if not res2.data:
+            raise RuntimeError(f"Nie udało się utworzyć ani odczytać survey: {ins.error}")
+        return res2.data[0]
+    return ins.data
+
+def _next_version_number(client, survey_id: str) -> int:
+    res = client.rpc("sql", {  # fallback bez RPC – zrób to po stronie klienta
+        # nic: użyjemy select max(...)
+    })
+    # prosty wariant: select max(version)
+    res = client.from_("survey_versions").select("version").eq("survey_id", survey_id).order("version", desc=True).limit(1).execute()
+    if res.data and len(res.data) > 0:
+        return int(res.data[0]["version"]) + 1
+    return 1
+
+def _save_new_version(
+    client,
+    survey_id: str,
+    content: Dict[str, Any],
+    threshold_green: int,
+    threshold_amber: int,
+    created_by: str,
+    set_active: bool,
+) -> Dict[str, Any]:
+    version_no = _next_version_number(client, survey_id)
+    ins = client.from_("survey_versions").insert({
+        "survey_id": survey_id,
+        "version": version_no,
+        "content": content,
+        "threshold_green": threshold_green,
+        "threshold_amber": threshold_amber,
+        "created_by": created_by,
+        "is_active": False,  # najpierw false
+    }).select("*").single().execute()
+    if ins.error:
+        raise RuntimeError(f"Insert survey_versions: {ins.error}")
+    ver = ins.data
+
+    if set_active:
+        _set_active_version(client, survey_id, ver["id"])
+        ver["is_active"] = True
+
+    return ver
+
+def _set_active_version(client, survey_id: str, version_id: str) -> None:
+    # wyłącz inne
+    upd1 = client.from_("survey_versions").update({"is_active": False}).eq("survey_id", survey_id).execute()
+    if upd1.error:
+        raise RuntimeError(f"Deactive others: {upd1.error}")
+    # włącz wskazaną
+    upd2 = client.from_("survey_versions").update({"is_active": True}).eq("id", version_id).execute()
+    if upd2.error:
+        raise RuntimeError(f"Activate chosen: {upd2.error}")
+
+def _load_active_version(client) -> Optional[Dict[str, Any]]:
+    survey = _get_or_create_survey(client)
+    res = client.from_("survey_versions").select("*").eq("survey_id", survey["id"]).eq("is_active", True).limit(1).execute()
+    if res.data and len(res.data) > 0:
+        return res.data[0]
+    return None
+
+
 # ========= Widoki =========
 def _parse_uploaded_file(upl) -> Dict[str, Any]:
     """
@@ -263,146 +338,127 @@ def _parse_uploaded_file(upl) -> Dict[str, Any]:
     else:
         raise ValueError("Obsługiwane typy: CSV lub JSON")
 
+
+def render_admin_upload_block(client, current_email: str):
+    st.subheader("Wgraj nową ankietę")
+    st.caption("Załaduj plik CSV/JSON i ustaw progi „green/amber”.")
+
+    upl = st.file_uploader("Plik ankiety", type=["csv", "json"])
+    col_g, col_a, col_chk = st.columns([1,1,1])
+    with col_g:
+        green = st.number_input("Próg GREEN (%)", min_value=0, max_value=100, value=80, step=1)
+    with col_a:
+        amber = st.number_input("Próg AMBER (%)", min_value=0, max_value=100, value=60, step=1)
+    with col_chk:
+        set_active = st.checkbox("Ustaw jako aktywną", value=True)
+
+    if st.button("Zapisz nową wersję", type="primary", use_container_width=False, help="Zapisze wersję i ewentualnie aktywuje ją"):
+        if not upl:
+            st.error("Nie wybrano pliku.")
+            return
+        try:
+            survey = _get_or_create_survey(client)
+            parsed: Dict[str, Any] = _parse_uploaded_file(upl)  # Twoja istniejąca funkcja
+            ver = _save_new_version(
+                client,
+                survey_id=survey["id"],
+                content=parsed,
+                threshold_green=int(green),
+                threshold_amber=int(amber),
+                created_by=current_email,
+                set_active=set_active,
+            )
+            st.success(f"Zapisano wersję v{ver['version']} (active={ver['is_active']}).")
+        except Exception as e:
+            st.error(f"❌ Nie udało się zapisać nowej wersji: {e}")
+
+
+def render_admin_whitelist_block(client):
+    st.subheader("Whitelist / Administratorzy")
+
+    email_input = st.text_input("Dodaj adres e-mail (user/administrator)", placeholder="user@firma.com")
+    c1, c2 = st.columns([1,1])
+    with c1:
+        if st.button("Dodaj do whitelisty (user)", type="secondary"):
+            if not email_input:
+                st.error("Podaj adres e-mail.")
+            else:
+                up = client.from_("allowed_emails").upsert(
+                    {"email": email_input, "source": "admin", "is_admin": False},
+                    on_conflict="email"
+                ).execute()
+                if up.error:
+                    st.error(up.error.message)
+                else:
+                    st.success(f"Dodano/zaktualizowano {email_input} jako użytkownika.")
+
+    with c2:
+        if st.button("Dodaj jako administratora", type="primary"):
+            if not email_input:
+                st.error("Podaj adres e-mail.")
+            else:
+                up = client.from_("allowed_emails").upsert(
+                    {"email": email_input, "source": "admin", "is_admin": True},
+                    on_conflict="email"
+                ).execute()
+                if up.error:
+                    st.error(up.error.message)
+                else:
+                    st.success(f"{email_input} posiada uprawnienia administratora.")
+
+    # Lista obecna
+    st.divider()
+    st.caption("Aktualna lista (whitelist):")
+    lst = client.from_("allowed_emails").select("email, created_at, source, is_admin").order("email").execute()
+    if lst.error:
+        st.error(lst.error.message)
+    else:
+        import pandas as pd
+        df = pd.DataFrame(lst.data or [])
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+
+
 def render_admin_panel(client, email: str):
     ui_header("👑 Panel administracyjny", f"Zalogowano jako: {email}")
 
     # --- wgrywanie nowej wersji ---
-    ui_card("Wgraj nową ankietę",
-            "<div class='muted'>Załaduj plik CSV/JSON oraz ustaw progi „green/amber”.</div>")
+    render_admin_upload_block(client, current_email)
+    st.divider()
 
-    upl = st.file_uploader("Plik ankiety", type=["csv", "json"], label_visibility="visible")
-    colg, cola, colc = st.columns([1,1,1])
-    with colg:
-        green = st.number_input("Próg GREEN (%)", min_value=0, max_value=100, value=80, step=1,
-                                label_visibility="visible")
-    with cola:
-        amber = st.number_input("Próg AMBER (%)", min_value=0, max_value=100, value=60, step=1,
-                                label_visibility="visible")
-    with colc:
-        set_active_now = st.checkbox("Ustaw jako aktywną", value=False)
-
-    if st.button("Zapisz nową wersję", type="primary"):
-        try:
-            content = _parse_uploaded_file(upl)
-            if not content:
-                st.error("Brak/niepoprawny plik.")
-            else:
-                survey_id = _get_or_create_survey(client)
-                next_ver = _get_next_version(client, survey_id)
-                thresholds = {"green": int(green), "amber": int(amber)}
-                ins = (client.table("survey_versions").insert({
-                        "survey_id": survey_id,
-                        "version": next_ver,
-                        "content": content,
-                        "thresholds": thresholds,
-                        "is_active": False,
-                        "created_by": email,
-                      })
-                      .select("id")
-                      .single()
-                      .execute())
-                ver_id = ins.data["id"]
-                if set_active_now:
-                    _activate_version(client, survey_id, ver_id)
-                st.success(f"Zapisano wersję {next_ver}{' (aktywna)' if set_active_now else ''}.")
-        except Exception as e:
-            st.error(f"Nie udało się zapisać wersji: {e}")
-
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    # --- wybór aktywnej wersji ---
-    ui_card("Aktywna wersja")
+    # Aktywna wersja – skrót
+    st.subheader("Aktywna wersja")
     try:
-        survey_id = _get_or_create_survey(client)
-        res = (client.table("survey_versions")
-               .select("id, version, is_active, created_at, thresholds")
-               .eq("survey_id", survey_id)
-               .order("version", desc=True)
-               .execute())
-        rows = getattr(res, "data", None) or []
-        if rows:
-            labels = [f"v{r['version']}  {'(akty.)' if r['is_active'] else ''}  /  "
-                      f"prog: G{r['thresholds'].get('green','?')} A{r['thresholds'].get('amber','?')}  "
-                      f"/ {r['created_at']}" for r in rows]
-            idx = st.selectbox("Wersje", options=list(range(len(rows))), format_func=lambda i: labels[i],
-                               label_visibility="visible")
-            if st.button("Ustaw wybraną wersję jako aktywną"):
-                _activate_version(client, survey_id, rows[idx]["id"])
-                st.success(f"Aktywowano wersję v{rows[idx]['version']}.")
-                st.experimental_rerun()
+        active = _load_active_version(client)
+        if active:
+            st.success(f"v{active['version']} | green={active['threshold_green']} | amber={active['threshold_amber']}")
         else:
-            st.info("Brak wersji ankiety.")
+            st.warning("Brak aktywnej wersji.")
     except Exception as e:
         st.error(f"Nie udało się pobrać wersji: {e}")
 
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-    # --- zarządzanie whitelistą i adminami ---
-    ui_card("Whitelist / Administratorzy")
-    new_admin = st.text_input("Dodaj adres e-mail jako administratora", "", placeholder="user@firma.com",
-                              label_visibility="visible")
-    cols = st.columns([1,1])
-    with cols[0]:
-        if st.button("Dodaj do whitelisty (user)"):
-            try:
-                client.table("allowed_emails").upsert({
-                    "email": new_admin.strip().lower(),
-                    "is_admin": False,
-                    "source": "admin_panel"
-                }, on_conflict="email").execute()
-                st.success("Dodano/zmodyfikowano w whitelist.")
-            except Exception as e:
-                st.error(f"Błąd whitelist: {e}")
-    with cols[1]:
-        if st.button("Dodaj jako administratora"):
-            try:
-                client.table("allowed_emails").upsert({
-                    "email": new_admin.strip().lower(),
-                    "is_admin": True,
-                    "source": "admin_panel"
-                }, on_conflict="email").execute()
-                st.success("Dodano/zmodyfikowano administratora.")
-            except Exception as e:
-                st.error(f"Błąd admin: {e}")
-
-    # podgląd listy
-    try:
-        tab = client.table("allowed_emails").select("email, created_at, source, is_admin").order("email").execute()
-        st.dataframe(getattr(tab, "data", None) or [], use_container_width=True, hide_index=True)
-    except Exception as e:
-        st.error(f"Nie udało się pobrać listy: {e}")
-
+    st.divider()
+    render_admin_whitelist_block(client)
 
 
 def render_user_panel(client: Client, email: str):
 
-    ui_header("📋 Moje ankiety", f"Zalogowano jako: {email}")
+def render_user_panel(client, current_email: str):
+    st.subheader("Moje ankiety")
+
     active = _load_active_version(client)
+    if not active:
+        st.info("Aktualnie brak aktywnej wersji ankiety. Skontaktuj się z administratorem.")
+        return
 
-    if active:
-        thr = active["thresholds"]
-        ui_card(
-            f"Aktywna wersja ankiety: v{active['version']}",
-            f"<div class='muted'>Progi: GREEN {thr.get('green')}% • AMBER {thr.get('amber')}%</div>"
-        )
-    else:
-        st.warning("Brak aktywnej wersji ankiety. Skontaktuj się z administratorem.")
+    st.caption(f"Aktywna wersja: v{active['version']} (utworzona {active['created_at']})")
+    # TODO: tutaj lista „Twoich ankiet i status realizacji” (placeholder)
+    col_new, col_resume = st.columns([1,1])
+    with col_new:
+        st.button("➕ Rozpocznij nową ankietę", type="primary")
+    with col_resume:
+        st.button("⤴️ Wróć do ostatniej ankiety")
 
-    # …dalej Twoje przyciski i lista “Moje ankiety”…
-    ui_header("📋 Moje ankiety", f"Zalogowano jako: {email}")
-
-    ui_card(
-        "Status realizacji",
-        "<p class='muted'>Tu pojawi się lista Twoich ankiet i status (placeholder).</p>"
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("➕ Rozpocznij nową ankietę", type="primary", use_container_width=True):
-            st.success("Start nowej ankiety (placeholder).")
-    with col2:
-        if st.button("🔄 Wróć do ostatniej ankiety", use_container_width=True):
-            st.info("Wczytanie ostatniej ankiety (placeholder).")
 
 
 # ========= Pasek sesji / logout =========
