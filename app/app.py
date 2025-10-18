@@ -77,7 +77,7 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "").strip()
 APP_BASE_URL = os.getenv("APP_BASE_URL", "http://localhost:8501").strip()
 SITE_BASE_URL = os.getenv("SITE_BASE_URL", "http://localhost:8080").strip()
 
-DEBUG_LOGIN = false
+DEBUG_LOGIN = False
 
 @st.cache_resource(show_spinner=False)
 def supa() -> Client:
