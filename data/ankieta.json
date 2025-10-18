@@ -1,0 +1,38 @@
+{
+  "title": "DORA Audit",
+  "questions": [
+    {
+      "id": "q1",
+      "type": "single",
+      "text": "Jaki jest poziom automatyzacji testów?",
+      "options": [
+        { "label": "Brak",          "score": 0 },
+        { "label": "Częściowa",     "score": 40 },
+        { "label": "Wysoka",        "score": 80 }
+      ]
+    },
+    {
+      "id": "q2",
+      "type": "multi",
+      "text": "Które z poniższych stosujecie?",
+      "options": [
+        { "label": "CI pipeline",   "score": 20 },
+        { "label": "CD pipeline",   "score": 20 },
+        { "label": "Feature flags", "score": 20 }
+      ]
+    },
+    {
+      "id": "q3",
+      "type": "scale",
+      "text": "Jak oceniasz lead time?",
+      "min": 1, "max": 5, "step": 1,
+      "labels": { "1": "bardzo słabo", "5": "bardzo dobrze" },
+      "score_per_step": 20
+    },
+    {
+      "id": "q4",
+      "type": "text",
+      "text": "Komentarz (opcjonalnie)"
+    }
+  ]
+}

@@ -7,3 +7,5 @@ supabase>=2.5.0
 weasyprint>=61.0
 
 requests>=2.31.0
+
+reportlab==4.2.2
